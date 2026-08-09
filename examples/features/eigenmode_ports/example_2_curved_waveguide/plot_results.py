@@ -11,6 +11,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch, Rectangle, Wedge
 import numpy as np
 
 
@@ -19,6 +21,80 @@ OUTPUT_STEM = EXAMPLE_DIR / "curved_waveguide"
 SPARAMETER_PLOT_PATH = EXAMPLE_DIR / "curved_waveguide_sparameters.png"
 FIELD_PLOT_PATH = EXAMPLE_DIR / "curved_waveguide_field_propagation.png"
 PLOT_FLOOR_DB = -100.0
+DIELECTRIC_COLOR = "#969696"
+PORT_COLOR = "#d62728"
+FIELD_ALPHA_FLOOR = 0.08
+
+
+def field_overlay_alpha(values, limit):
+    """Keep geometry visible where the common-scale field is weak."""
+
+    normalized = np.clip(np.abs(values) / limit, 0.0, 1.0)
+    return FIELD_ALPHA_FLOOR + (1.0 - FIELD_ALPHA_FLOOR) * np.sqrt(normalized)
+
+
+def draw_material_background(axis):
+    """Draw the straight and annular dielectric guide sections in millimetres."""
+
+    style = {
+        "facecolor": DIELECTRIC_COLOR,
+        "edgecolor": "none",
+        "zorder": 0,
+    }
+    axis.add_patch(Rectangle((0.0, 35.0), 100.0, 20.0, **style))
+    axis.add_patch(
+        Wedge(
+            (100.0, 60.0),
+            25.0,
+            270.0,
+            360.0,
+            width=20.0,
+            **style,
+        )
+    )
+    axis.add_patch(Rectangle((105.0, 60.0), 20.0, 105.0, **style))
+
+
+def draw_port_overlays(axis):
+    """Mark both orthogonal eigenmode planes over their actual apertures."""
+
+    axis.plot(
+        (20.0, 20.0),
+        (5.0, 85.0),
+        color=PORT_COLOR,
+        linestyle="--",
+        linewidth=1.2,
+        zorder=3,
+    )
+    axis.text(
+        21.5,
+        83.5,
+        "P1 (+x)",
+        color=PORT_COLOR,
+        fontsize=7,
+        rotation=90,
+        ha="left",
+        va="top",
+        zorder=3,
+    )
+    axis.plot(
+        (75.0, 155.0),
+        (160.0, 160.0),
+        color=PORT_COLOR,
+        linestyle="--",
+        linewidth=1.2,
+        zorder=3,
+    )
+    axis.text(
+        76.5,
+        158.5,
+        "P2 (-y)",
+        color=PORT_COLOR,
+        fontsize=7,
+        ha="left",
+        va="top",
+        zorder=3,
+    )
 
 
 def read_sparameters(stem: Path):
@@ -115,6 +191,7 @@ def plot_field_snapshots(stem: Path, plot_path: Path, field: str = "Ez"):
     active_axes = []
     for axis, (time_ns, values, extent) in zip(axes.flat, snapshots):
         active_axes.append(axis)
+        draw_material_background(axis)
         image = axis.imshow(
             values,
             origin="lower",
@@ -124,12 +201,34 @@ def plot_field_snapshots(stem: Path, plot_path: Path, field: str = "Ez"):
             vmax=limit,
             interpolation="nearest",
             aspect="equal",
+            alpha=field_overlay_alpha(values, limit),
+            zorder=1,
         )
+        draw_port_overlays(axis)
         axis.set_title(f"t = {time_ns:.2f} ns")
         axis.set_xlabel("x (mm)")
         axis.set_ylabel("y (mm)")
     for axis in axes.flat[len(snapshots) :]:
         axis.set_visible(False)
+    active_axes[0].legend(
+        handles=[
+            Patch(
+                facecolor=DIELECTRIC_COLOR,
+                edgecolor="none",
+                label="Dielectric core",
+            ),
+            Line2D(
+                (0,),
+                (0,),
+                color=PORT_COLOR,
+                linestyle="--",
+                linewidth=1.2,
+                label="Eigenmode port",
+            ),
+        ],
+        loc="upper right",
+        fontsize="small",
+    )
     figure.colorbar(image, ax=active_axes, label=f"{field} (V/m)")
     figure.suptitle("Curved dielectric waveguide: Ez propagation")
     figure.savefig(plot_path, dpi=180)

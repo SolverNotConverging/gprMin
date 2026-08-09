@@ -219,6 +219,85 @@ def test_2d_te_monitor_preserves_absolute_power_after_cell_averaging(monkeypatch
     assert monitor.power_matrix[0, 0, 0] == pytest.approx(1.0)
 
 
+def _prepare_anchor_profile_monitor(monkeypatch, *, matched):
+    monkeypatch.setattr(
+        config,
+        "sim_config",
+        SimpleNamespace(
+            dtypes={
+                "float_or_double": np.float64,
+                "complex": np.complex128,
+            }
+        ),
+    )
+    owner = EigenmodeSource(None)
+    owner.normal_axis = 0
+    owner.transverse_axes = (1, 2)
+    owner.invariant_axis = None
+    owner.physical_transverse_axis = None
+    owner.domain_polarization = None
+    owner.transverse_start = np.zeros(2, dtype=np.int32)
+    owner.transverse_stop = np.ones(2, dtype=np.int32)
+    owner.match_depth_cells = 2 if matched else None
+    owner._modal_cross_power = lambda electric, magnetic, grid: 1.0
+
+    anchor_e = []
+    anchor_h = []
+    for electric_value, magnetic_value in ((1.0, 10.0), (2.0, 20.0), (4.0, 40.0)):
+        electric = [
+            np.zeros((2, 2), dtype=np.complex128),
+            np.full((1, 2), electric_value, dtype=np.complex128),
+            np.zeros((2, 1), dtype=np.complex128),
+        ]
+        magnetic = [
+            np.zeros((1, 1), dtype=np.complex128),
+            np.zeros((2, 1), dtype=np.complex128),
+            np.full((1, 2), magnetic_value, dtype=np.complex128),
+        ]
+        anchor_e.append([electric])
+        anchor_h.append([magnetic])
+
+    monitor = EigenmodePortMonitor(
+        owner=owner,
+        port_index=1,
+        port_id="matched" if matched else "ordinary",
+        is_source=False,
+        excitation_mode_index=None,
+        mode_indices=(1,),
+        anchor_frequencies=np.asarray((1e9, 2e9, 3e9)),
+        anchor_e=anchor_e,
+        anchor_h=anchor_h,
+        anchor_neff=np.asarray(((1.0,), (2.0,), (4.0,))),
+        dft_start=1e9,
+        dft_stop=3e9,
+        dft_points=5,
+    )
+    monitor.prepare(
+        SimpleNamespace(
+            dt=1e-12,
+            dl=np.ones(3),
+            eigenmodeports=[],
+        )
+    )
+    return monitor
+
+
+def test_matched_monitor_keeps_centre_profile_but_interpolates_neff(monkeypatch):
+    monitor = _prepare_anchor_profile_monitor(monkeypatch, matched=True)
+
+    np.testing.assert_allclose(monitor.eu[:, 0, 0, 0], (2.0, 2.0, 2.0, 2.0, 2.0))
+    np.testing.assert_allclose(monitor.hv[:, 0, 0, 0], (20.0, 20.0, 20.0, 20.0, 20.0))
+    np.testing.assert_allclose(monitor.neff[:, 0], (1.0, 1.5, 2.0, 3.0, 4.0))
+
+
+def test_ordinary_monitor_interpolates_profiles_and_neff(monkeypatch):
+    monitor = _prepare_anchor_profile_monitor(monkeypatch, matched=False)
+
+    np.testing.assert_allclose(monitor.eu[:, 0, 0, 0], (1.0, 1.5, 2.0, 3.0, 4.0))
+    np.testing.assert_allclose(monitor.hv[:, 0, 0, 0], (10.0, 15.0, 20.0, 30.0, 40.0))
+    np.testing.assert_allclose(monitor.neff[:, 0], (1.0, 1.5, 2.0, 3.0, 4.0))
+
+
 def test_multimode_gram_solve_separates_incident_and_outgoing_waves(monkeypatch):
     monkeypatch.setattr(
         config,

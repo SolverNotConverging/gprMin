@@ -217,15 +217,35 @@ def automatic_anchor_frequencies(
     support_high: float,
     fmin: float,
     fmax: float,
+    *,
+    minimum_generated_points: int = 3,
+    maximum_generated_points: int = 9,
 ) -> tuple[float, ...]:
     """Choose deterministic log-spaced anchors plus passband landmarks."""
     if support_low > 0 and support_high == support_low:
         return (float(support_low),)
     if support_low <= 0 or support_high <= support_low:
         raise ValueError('Automatic eigenmode anchor support must satisfy 0 < low < high.')
+    if (
+        isinstance(minimum_generated_points, (bool, np.bool_))
+        or not isinstance(minimum_generated_points, (int, np.integer))
+        or minimum_generated_points < 2
+    ):
+        raise ValueError('minimum_generated_points must be an integer of at least two.')
+    if (
+        isinstance(maximum_generated_points, (bool, np.bool_))
+        or not isinstance(maximum_generated_points, (int, np.integer))
+        or maximum_generated_points < minimum_generated_points
+    ):
+        raise ValueError(
+            'maximum_generated_points must be an integer no smaller than the minimum.'
+        )
     ratio = support_high / support_low
-    intervals = max(2, int(np.ceil(np.log(ratio) / np.log(1.5))))
-    intervals = min(intervals, 8)
+    intervals = max(
+        minimum_generated_points - 1,
+        int(np.ceil(np.log(ratio) / np.log(1.5))),
+    )
+    intervals = min(intervals, maximum_generated_points - 1)
     generated = np.geomspace(support_low, support_high, intervals + 1)
     landmarks = np.asarray(
         (support_low, fmin, 0.5 * (fmin + fmax), fmax, support_high),
@@ -350,24 +370,62 @@ class EigenmodePortSpec:
                 required_high,
                 band.fmin,
                 band.fmax,
+                minimum_generated_points=(9 if self.match is not None else 3),
+                maximum_generated_points=(13 if self.match is not None else 9),
             )
         else:
             explicit = tuple(float(value) for value in self.anchors)
-            if len(explicit) > 1 and (
-                required_low < explicit[0] or required_high > explicit[-1]
-            ):
+            insufficient_matched_coverage = self.match is not None and (
+                required_low < required_high
+                and (
+                    len(explicit) < 2
+                    or required_low < explicit[0]
+                    or required_high > explicit[-1]
+                )
+            )
+            insufficient_ordinary_coverage = self.match is None and (
+                len(explicit) > 1
+                and (
+                    required_low < explicit[0]
+                    or required_high > explicit[-1]
+                )
+            )
+            if insufficient_matched_coverage or insufficient_ordinary_coverage:
                 suggestion = _format_anchor_suggestion(required_low, required_high)
+                matched_guidance = (
+                    " Matched-port anchors are verification and boundary-"
+                    "operator synthesis points, so the ordinary single-anchor constant-"
+                    "basis exception does not apply."
+                    if self.match is not None
+                    else " A single explicit anchor is also accepted as an "
+                    "intentional constant modal basis across the band."
+                )
                 raise ValueError(
                     f'Explicit eigenmode anchors for port {self.port} span '
                     f'{explicit[0]:g} to {explicit[-1]:g} Hz, but required modal '
                     f'coverage spans {required_low:g} to {required_high:g} Hz. '
                     f'Suggested coverage anchors: {suggestion}. Alternatively use '
-                    'anchors=\'auto\'. A single explicit anchor is also accepted as an '
-                    'intentional constant modal basis across the band.'
+                    f'anchors=\'auto\'.{matched_guidance}'
                 )
             self.resolved_anchors = explicit
+        if self.match is not None:
+            centre_frequency = 0.5 * (band.fmin + band.fmax)
+            anchors = np.asarray(self.resolved_anchors, dtype=np.float64)
+            near_centre = np.isclose(
+                anchors,
+                centre_frequency,
+                rtol=8 * np.finfo(float).eps,
+                atol=0.0,
+            )
+            self.resolved_anchors = tuple(
+                sorted(
+                    [float(value) for value in anchors[~near_centre]]
+                    + [centre_frequency]
+                )
+            )
         logger.info(
-            f'Resolved eigenmode port {self.port} modal anchors: '
+            f'Resolved eigenmode port {self.port} '
+            + ('matched verification anchors: ' if self.match is not None else 'modal anchors: ')
             + ', '.join(f'{value:g}' for value in self.resolved_anchors)
             + ' Hz.'
         )

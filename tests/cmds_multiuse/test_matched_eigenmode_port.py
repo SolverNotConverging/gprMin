@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import gprMax
+import gprMax.matched_eigenmode_ports as matched_module
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -117,7 +118,7 @@ def _rectangular_waveguide_scene(
             p1=(lower_port_position, 0.001, 0.001),
             p2=(lower_port_position, 0.019, 0.011),
             direction="+",
-            modes=(1, 2),
+            modes=(1,),
             anchors=(20e9,),
             plot_fields=False,
         )
@@ -137,7 +138,7 @@ def _rectangular_waveguide_scene(
                     0.011,
                 ),
                 direction="+" if overlapping_ports else "-",
-                modes=(1, 2),
+                modes=(1,),
                 anchors=(20e9,),
                 plot_fields=False,
             )
@@ -158,7 +159,10 @@ def _rectangular_waveguide_scene(
 
 
 @pytest.mark.parametrize("cpu_precision", ["single", "double"])
-def test_3d_active_and_passive_matched_ports_run(tmp_path, cpu_precision):
+def test_3d_one_mode_active_and_passive_matched_ports_run(
+    tmp_path,
+    cpu_precision,
+):
     output = tmp_path / f"matched_rectangular_waveguide_{cpu_precision}"
     gprMax.run(
         scenes=[_rectangular_waveguide_scene()],
@@ -184,8 +188,87 @@ def test_3d_active_and_passive_matched_ports_run(tmp_path, cpu_precision):
         assert upper.attrs["MatchedBoundaryIndex"] == 30
         assert lower.attrs["MatchDepthCells"] == 5
         assert upper.attrs["MatchDepthCells"] == 5
-        np.testing.assert_array_equal(lower.attrs["ModeIndices"], (1, 2))
-        np.testing.assert_array_equal(upper.attrs["ModeIndices"], (1, 2))
+        assert lower.attrs["MatchedFormulation"] == (
+            "PowerAdjointModalAdmittanceADE"
+        )
+        assert upper.attrs["MatchedFormulation"] == (
+            "PowerAdjointModalAdmittanceADE"
+        )
+        np.testing.assert_array_equal(lower.attrs["ModeIndices"], (1,))
+        np.testing.assert_array_equal(upper.attrs["ModeIndices"], (1,))
+
+
+def test_order_zero_rational_runtime_runs_on_a_fixed_profile_waveguide(
+    tmp_path,
+    monkeypatch,
+):
+    original_synthesis = matched_module.synthesize_passive_admittance
+
+    def fixed_profile_model(*args, **kwargs):
+        return original_synthesis(
+            np.asarray((1.0,)),
+            np.asarray((1.0,)),
+            candidate_orders=(0,),
+            direct=1.0,
+            maximum_relative_error=1e-12,
+            maximum_reflection_error=1e-12,
+        )
+
+    monkeypatch.setattr(
+        matched_module,
+        "synthesize_passive_admittance",
+        fixed_profile_model,
+    )
+    monkeypatch.setattr(matched_module, "ENABLE_RATIONAL_ADMITTANCE_RUNTIME", True)
+    output = tmp_path / "matched_fixed_profile_rational"
+
+    gprMax.run(
+        scenes=[_rectangular_waveguide_scene()],
+        n=1,
+        outputfile=output,
+        hide_progress_bars=True,
+    )
+
+    with h5py.File(output.with_suffix(".h5"), "r") as handle:
+        port = handle["eigenmode_ports/port1"]
+        assert bool(port.attrs["MatchedRationalRuntimeEnabled"])
+        assert port.attrs["MatchedRationalShadowStatus"] == "certified-enabled"
+        assert len(port.attrs["MatchedRationalShadowPoleReal"]) == 0
+        assert bool(port.attrs["MatchedRationalShadowFinalPassive"])
+
+
+def test_disabled_shadow_fit_failure_does_not_abort_matched_boundary(
+    tmp_path,
+    monkeypatch,
+):
+    def fail_synthesis(*args, **kwargs):
+        raise RuntimeError("deliberate shadow failure")
+
+    def forbidden_ade(*args, **kwargs):
+        raise AssertionError("disabled runtime must not construct a rational ADE")
+
+    monkeypatch.setattr(
+        matched_module,
+        "synthesize_passive_admittance",
+        fail_synthesis,
+    )
+    monkeypatch.setattr(matched_module, "RationalModalAdmittanceADE", forbidden_ade)
+    output = tmp_path / "matched_shadow_failure_isolated"
+
+    gprMax.run(
+        scenes=[_rectangular_waveguide_scene()],
+        n=1,
+        outputfile=output,
+        hide_progress_bars=True,
+    )
+
+    with h5py.File(output.with_suffix(".h5"), "r") as handle:
+        port = handle["eigenmode_ports/port1"]
+        assert not bool(port.attrs["MatchedRationalRuntimeEnabled"])
+        assert port.attrs["MatchedRationalShadowStatus"] == "failed-disabled"
+        assert "deliberate shadow failure" in port.attrs[
+            "MatchedRationalShadowFailure"
+        ]
 
 
 def test_matched_eigenmode_hash_command_runs_end_to_end(tmp_path):
@@ -194,19 +277,20 @@ def test_matched_eigenmode_hash_command_runs_end_to_end(tmp_path):
         "\n".join(
             (
                 "#title: Matched eigenmode hash command",
-                "#domain_mode: TM",
                 "#dx_dy_dz: 0.001 0.001 0.001",
-                "#domain: 0.06 0.05 inf",
+                "#domain: 0.03 0.02 0.012",
                 "#time_window: 0.12e-9",
                 "#pml_cells: 0",
-                "#waveform: contsine 1 5e9 mode",
-                "#box: 0 0 0 0.06 0.005 inf pec",
-                "#box: 0 0.045 0 0.06 0.05 inf pec",
-                "#eigenmode_band: band 5e9 5e9 1",
-                "#eigenmode_port: 1 0.015 0.005 0 0.015 0.045 inf + 1 5e9",
-                "#eigenmode_match: 1 15",
+                "#waveform: contsine 1 20e9 mode",
+                "#box: 0 0 0 0.03 0.001 0.012 pec",
+                "#box: 0 0.019 0 0.03 0.02 0.012 pec",
+                "#box: 0 0.001 0 0.03 0.019 0.001 pec",
+                "#box: 0 0.001 0.011 0.03 0.019 0.012 pec",
+                "#eigenmode_band: band 20e9 20e9 1",
+                "#eigenmode_port: 1 0.005 0.001 0.001 0.005 0.019 0.011 + 1 20e9",
+                "#eigenmode_match: 1 5",
                 "#eigenmode_excitation: 1 1 mode",
-                "#rx: 0.035 0.025 inf",
+                "#rx: 0.015 0.010 0.006",
             )
         ),
         encoding="utf-8",
@@ -223,8 +307,14 @@ def test_matched_eigenmode_hash_command_runs_end_to_end(tmp_path):
     with h5py.File(output.with_suffix(".h5"), "r") as handle:
         port = handle["eigenmode_ports/port1"]
         assert bool(port.attrs["Matched"])
-        assert port.attrs["MatchDepthCells"] == 15
-        assert np.max(np.abs(handle["rxs/rx1/Ez"][...])) > 0
+        assert port.attrs["MatchDepthCells"] == 5
+        assert port.attrs["MatchedFormulation"] == (
+            "PowerAdjointModalAdmittanceADE"
+        )
+        assert max(
+            np.max(np.abs(handle[f"rxs/rx1/{component}"][...]))
+            for component in ("Ex", "Ey", "Ez")
+        ) > 0
 
 
 def test_matched_waveguide_example_builds_geometry_from_exact_hash_input(tmp_path):
@@ -242,11 +332,53 @@ def test_matched_waveguide_example_builds_geometry_from_exact_hash_input(tmp_pat
     commands = [line.strip() for line in contents.splitlines()]
 
     assert "#pml_cells: 0" in commands
+    assert "#domain: 0.300 0.012 0.006" in commands
+    assert "#dx_dy_dz: 0.0005 0.0005 0.0005" in commands
+    assert "#time_window: 18e-9" in commands
+    assert "#eigenmode_band: microstrip_band 4.3e9 4.7e9 21" in commands
+    assert "#rx: 0.150 0.006 0.003" in commands
+    for expected_box in (
+        "#box: 0 0 0 0.300 0.012 0.0005 pec",
+        "#box: 0 0 0.0005 0.300 0.012 0.0020 substrate",
+        "#box: 0 0.005 0.0020 0.300 0.007 0.0025 pec",
+    ):
+        assert expected_box in commands
+    assert not any(command.startswith("#domain_mode:") for command in commands)
+    assert [
+        command for command in commands if command.startswith("#eigenmode_port:")
+    ] == [
+        "#eigenmode_port: 1 0.003 0 0.0005 0.003 0.012 0.006 + 1 auto",
+        "#eigenmode_port: 2 0.297 0 0.0005 0.297 0.012 0.006 - 1 auto",
+    ]
     assert [
         command for command in commands if command.startswith("#eigenmode_match:")
     ] == [
-        "#eigenmode_match: 1 10",
-        "#eigenmode_match: 2 10",
+        "#eigenmode_match: 1 6",
+        "#eigenmode_match: 2 6",
+    ]
+    snapshot_commands = [
+        command for command in commands if command.startswith("#snapshot:")
+    ]
+    assert len(snapshot_commands) == 8
+    assert all(
+        command.startswith("#snapshot: 0 0.006 0 0.300 ")
+        for command in snapshot_commands
+    )
+    snapshot_times_ns = [
+        float(command.split()[-2]) * 1e9 for command in snapshot_commands
+    ]
+    assert snapshot_times_ns == pytest.approx(
+        [2.7, 3.3, 3.9, 4.5, 5.4, 6.6, 8.5, 15.0]
+    )
+    assert [command.split()[-1] for command in snapshot_commands] == [
+        "matched_microstrip_2700ps.h5",
+        "matched_microstrip_3300ps.h5",
+        "matched_microstrip_3900ps.h5",
+        "matched_microstrip_4500ps.h5",
+        "matched_microstrip_5400ps.h5",
+        "matched_microstrip_6600ps.h5",
+        "matched_microstrip_8500ps.h5",
+        "matched_microstrip_15000ps.h5",
     ]
 
     gprMax.run(
@@ -352,7 +484,7 @@ def test_matched_port_rejects_symmetry_on_its_domain_face(tmp_path):
 
 
 def test_matched_port_rejects_lossy_fill(tmp_path):
-    with pytest.raises(ValueError, match="lossless, nondispersive homogeneous fill"):
+    with pytest.raises(ValueError, match="lossless, nondispersive section materials"):
         gprMax.run(
             scenes=[_rectangular_waveguide_scene(fill_conductivity=0.1)],
             n=1,
@@ -363,7 +495,7 @@ def test_matched_port_rejects_lossy_fill(tmp_path):
 
 
 def test_matched_port_rejects_heterogeneous_longitudinal_buffer(tmp_path):
-    with pytest.raises(ValueError, match="one homogeneous material"):
+    with pytest.raises(ValueError, match="longitudinally uniform material cross-section"):
         gprMax.run(
             scenes=[_rectangular_waveguide_scene(heterogeneous_buffer=True)],
             n=1,

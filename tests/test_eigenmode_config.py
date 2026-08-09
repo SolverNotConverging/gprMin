@@ -7,6 +7,7 @@ import gprMax.sources as sources_module
 from gprMax.eigenmode_config import (
     EigenmodeBandSpec,
     EigenmodeBandpassWaveform,
+    EigenmodeMatchSpec,
     EigenmodePortSpec,
     sampled_waveform_spectrum,
 )
@@ -90,6 +91,23 @@ def test_all_auto_ports_cover_the_same_significant_spectrum():
     assert receiver.resolved_anchors == source.resolved_anchors
 
 
+def test_matched_auto_ports_use_dense_synthesis_anchors_and_exact_centre():
+    band = EigenmodeBandSpec(id='wg', fmin=45e9, fmax=65e9, points=81)
+    band.significant_range = (32e9, 78e9)
+    ordinary = _port(1, 'auto')
+    matched = _port(2, 'auto')
+    matched.match = EigenmodeMatchSpec(port=2, depth_cells=10)
+
+    ordinary.resolve_anchors(band, is_source=True)
+    matched.resolve_anchors(band, is_source=False)
+
+    assert len(matched.resolved_anchors) >= 9
+    assert len(matched.resolved_anchors) > len(ordinary.resolved_anchors)
+    assert matched.resolved_anchors[0] == 32e9
+    assert matched.resolved_anchors[-1] == 78e9
+    assert matched.resolved_anchors.count(55e9) == 1
+
+
 def test_explicit_multiple_anchors_require_coverage_but_single_is_allowed():
     band = EigenmodeBandSpec(id='wg', fmin=45e9, fmax=65e9, points=81)
     band.significant_range = (32e9, 78e9)
@@ -100,6 +118,39 @@ def test_explicit_multiple_anchors_require_coverage_but_single_is_allowed():
     single = _port(1, (55e9,))
     single.resolve_anchors(band, is_source=True)
     assert single.resolved_anchors == (55e9,)
+
+
+def test_matched_explicit_anchors_always_include_exact_band_centre():
+    band = EigenmodeBandSpec(id='wg', fmin=45e9, fmax=65e9, points=81)
+    band.significant_range = (45e9, 65e9)
+    port = _port(1, (45e9, 65e9))
+    port.match = EigenmodeMatchSpec(port=1, depth_cells=10)
+
+    port.resolve_anchors(band, is_source=True)
+
+    assert port.resolved_anchors == (45e9, 55e9, 65e9)
+
+
+def test_matched_near_centre_anchor_is_replaced_by_exact_centre():
+    band = EigenmodeBandSpec(id='wg', fmin=45e9, fmax=65e9, points=81)
+    band.significant_range = (45e9, 65e9)
+    near_centre = np.nextafter(55e9, np.inf)
+    port = _port(1, (45e9, near_centre, 65e9))
+    port.match = EigenmodeMatchSpec(port=1, depth_cells=10)
+
+    port.resolve_anchors(band, is_source=True)
+
+    assert port.resolved_anchors == (45e9, 55e9, 65e9)
+
+
+def test_matched_explicit_anchors_must_cover_required_spectrum():
+    band = EigenmodeBandSpec(id='wg', fmin=45e9, fmax=65e9, points=81)
+    band.significant_range = (40e9, 70e9)
+    port = _port(1, (55e9,))
+    port.match = EigenmodeMatchSpec(port=1, depth_cells=10)
+
+    with pytest.raises(ValueError, match='verification and boundary-operator synthesis'):
+        port.resolve_anchors(band, is_source=True)
 
 
 def test_auto_anchor_mode_mismatch_falls_back_to_band_centre(monkeypatch):
@@ -145,16 +196,24 @@ def test_explicit_anchor_mode_mismatch_remains_an_error():
 
 
 class _CoordinatedPort:
-    def __init__(self, port, frequencies, failure=None):
+    def __init__(
+        self,
+        port,
+        frequencies,
+        failure=None,
+        match_depth_cells=None,
+        anchor_policy='auto',
+    ):
         self.port_index = port
         self.frequency = frequencies[0]
         self.frequencies = frequencies
-        self.anchor_policy = 'auto'
-        self.requested_anchor_policy = 'auto'
-        self.resolved_anchor_policy = 'auto'
+        self.anchor_policy = anchor_policy
+        self.requested_anchor_policy = anchor_policy
+        self.resolved_anchor_policy = anchor_policy
         self.fallback_frequency = 55e9
         self.spectrum_coverage_policy = 'error'
         self.port_monitor = None
+        self.match_depth_cells = match_depth_cells
         self.failure = failure
         self.attempts = []
 
@@ -237,3 +296,54 @@ def test_in_band_tracking_failure_falls_back_all_auto_ports(monkeypatch):
     assert source.resolved_anchor_policy == 'auto_single_fallback'
     assert receiver.resolved_anchor_policy == 'auto_single_fallback'
     assert 'All automatic eigenmode ports' in warnings[0]
+
+
+def test_matched_auto_port_tracking_failure_cannot_fall_back():
+    anchors = (32e9, 45e9, 55e9, 65e9, 78e9)
+    failure = _failure(45e9, 55e9, lambda values: len(values) > 1)
+    source = _CoordinatedPort(1, anchors, match_depth_cells=10)
+    receiver = _CoordinatedPort(2, anchors, failure)
+    grid = SimpleNamespace(
+        eigenmodesources=[source],
+        eigenmodereceivers=[receiver],
+        eigenmodeports=[],
+        eigenmodeband=EigenmodeBandSpec(
+            id='wg',
+            fmin=45e9,
+            fmax=65e9,
+            points=81,
+            significant_range=(32e9, 78e9),
+        ),
+    )
+
+    with pytest.raises(ValueError, match='verification points'):
+        initialise_eigenmode_ports(grid)
+
+
+def test_matched_explicit_tracking_failure_does_not_suggest_one_anchor():
+    anchors = (40e9, 55e9, 70e9)
+    failure = _failure(40e9, 55e9, lambda values: True)
+    source = _CoordinatedPort(
+        1,
+        anchors,
+        failure,
+        match_depth_cells=10,
+        anchor_policy='explicit',
+    )
+    grid = SimpleNamespace(
+        eigenmodesources=[source],
+        eigenmodereceivers=[],
+        eigenmodeports=[],
+        eigenmodeband=EigenmodeBandSpec(
+            id='wg',
+            fmin=45e9,
+            fmax=65e9,
+            points=81,
+            significant_range=(40e9, 70e9),
+        ),
+    )
+
+    with pytest.raises(ValueError, match='do not replace them with one') as error:
+        initialise_eigenmode_ports(grid)
+
+    assert 'if a constant modal basis' not in str(error.value)

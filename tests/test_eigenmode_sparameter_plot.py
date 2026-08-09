@@ -51,8 +51,8 @@ def _load_matched_example_plotter():
 def _write_snapshot(path: Path, time_ns: float):
     with h5py.File(path, "w") as output:
         output.attrs["time"] = time_ns * 1e-9
-        output.attrs["dx_dy_dz"] = (0.001, 0.001, 0.001)
-        output["Ez"] = np.full((3, 2, 1), time_ns)
+        output.attrs["dx_dy_dz"] = (0.5e-3, 0.5e-3, 0.5e-3)
+        output["Ez"] = np.full((600, 1, 12), time_ns)
 
 
 def _write_matched_example_output(stem: Path):
@@ -70,11 +70,11 @@ def _write_matched_example_output(stem: Path):
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
         for frequency, destination_port, magnitude_db, valid in (
-            (11.5e9, 1, -18.0, 1),
-            (10.0e9, 1, -22.0, 1),
-            (11.5e9, 2, -1.5, 1),
-            (10.0e9, 2, -0.8, 1),
-            (10.75e9, 2, 100.0, 0),
+            (4.7e9, 1, -18.0, 1),
+            (4.3e9, 1, -22.0, 1),
+            (4.7e9, 2, -1.5, 1),
+            (4.3e9, 2, -0.8, 1),
+            (4.5e9, 2, 100.0, 0),
         ):
             writer.writerow(
                 {
@@ -90,19 +90,24 @@ def _write_matched_example_output(stem: Path):
 
     with h5py.File(stem.with_suffix(".h5"), "w") as output:
         ports = output.create_group("eigenmode_ports")
-        for port_number, boundary_index in ((1, 0), (2, 120)):
+        for port_number, boundary_index in ((1, 0), (2, 600)):
             port = ports.create_group(f"port{port_number}")
             port.attrs["Matched"] = True
-            port.attrs["MatchDepthCells"] = 10
+            port.attrs["MatchDepthCells"] = 6
             port.attrs["MatchedBoundaryIndex"] = boundary_index
             port.attrs["ModeIndices"] = (1,)
-            port.attrs["MatchedFormulation"] = "Alimenti2000NumericalModalTranslation"
+            port.attrs["MatchedFormulation"] = (
+                "PowerAdjointModalAdmittanceADE"
+            )
+            port.attrs["MatchedModalHalfCellTimeConstant"] = (1e-12,)
 
     snapshot_dir = stem.with_name(stem.name + "_snaps")
     snapshot_dir.mkdir()
-    _write_snapshot(snapshot_dir / "late_name.h5", 0.8)
-    _write_snapshot(snapshot_dir / "early_name.h5", 1.6)
-    _write_snapshot(snapshot_dir / "middle_name.h5", 1.2)
+    for file_index, time_ns in enumerate(
+        (2.7, 3.3, 3.9, 4.5, 5.4, 6.6, 8.5, 15.0),
+        start=1,
+    ):
+        _write_snapshot(snapshot_dir / f"unordered_{9 - file_index}.h5", time_ns)
 
 
 def _write_case(root, source_mode, primary_transmission_db=-1, case_name=None):
@@ -190,6 +195,9 @@ def test_example_snapshots_are_sorted_by_physical_time_and_can_be_capped(
 
 def test_matched_waveguide_example_plotter_consumes_synthetic_outputs(tmp_path, monkeypatch):
     plotter = _load_matched_example_plotter()
+    assert plotter.DOMAIN_MM == (300.0, 12.0, 6.0)
+    assert [port[0] for port in plotter.PORTS] == [3.0, 297.0]
+    assert plotter.MATCHED_BOUNDARY_INDICES == {1: 0, 2: 600}
     stem = tmp_path / "matched_waveguide"
     sparameter_plot = tmp_path / "matched_waveguide_sparameters.png"
     field_plot = tmp_path / "matched_waveguide_field_propagation.png"
@@ -202,11 +210,11 @@ def test_matched_waveguide_example_plotter_consumes_synthetic_outputs(tmp_path, 
 
     traces = plotter.read_sparameters(stem)
     assert set(traces) == {1, 2}
-    assert traces[1][:, 0].tolist() == [10.0, 11.5]
+    assert traces[1][:, 0].tolist() == pytest.approx([4.3, 4.7])
     assert traces[2][:, 1].tolist() == [-0.8, -1.5]
     snapshots = plotter.read_field_snapshots(stem)
     assert [snapshot[0] for snapshot in snapshots] == pytest.approx(
-        [0.8, 1.2, 1.6]
+        [2.7, 3.3, 3.9, 4.5, 5.4, 6.6, 8.5, 15.0]
     )
     assert sparameter_plot.stat().st_size > 0
     assert field_plot.stat().st_size > 0

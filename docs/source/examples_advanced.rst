@@ -9,7 +9,9 @@ Eigenmode ports
 
 The four numbered examples under ``examples/features/eigenmode_ports`` cover
 a straight waveguide, a curved waveguide, an eigenmode-fed pyramidal horn, and
-a PML-free guide terminated by two matched modal boundaries.
+a PML-free, shielded 3D microstrip terminated by two single-mode
+modal-admittance ADE boundaries. The last example is intentionally uniform,
+lossless, and nondispersive; a perturbed or radiating guide still needs PML.
 :doc:`eigenmode_port` provides a step-by-step tutorial for users who primarily
 want S-parameters, transient fields, and far fields.
 

@@ -421,17 +421,34 @@ for an ordinary monitor/TF-SF source. When ``#eigenmode_match`` or
 * ``MatchDepthCells`` -- the requested number of longitudinal cells between
   the modal reference plane and outward domain face;
 * ``MatchedBoundaryIndex`` -- the normal Yee-plane index of that outward
-  boundary; and
-* ``MatchedFormulation`` --
-  ``Alimenti2000NumericalModalTranslation``, identifying the numerical
-  translation operator based on [ALI2000]_.
+  boundary;
+* ``MatchedFormulation`` -- ``PowerAdjointModalAdmittanceADE``;
+* ``MatchedBasisFrequency`` -- the exact band-centre frequency whose modal
+  profile is the fixed runtime, reconstruction, and monitor basis; and
+* ``MatchedMinimumProfileOverlap`` -- one value per listed mode, giving the
+  minimum normalized overlap between that centre profile and all verification
+  anchors.
+
+The matched ADE also stores:
+
+* ``MatchedNormalizedAdmittance`` -- the centre-frequency generalized modal
+  admittance after joint E/H power normalization (currently one for its single
+  retained mode);
+* ``MatchedModalGroupVelocity`` -- the positive modal group velocity in m/s,
+  estimated from the verification-anchor :math:`d\beta/d\omega` slope; and
+* ``MatchedModalHalfCellTimeConstant`` -- the positive boundary storage time
+  constant in seconds, :math:`\Delta w/(2v_g)`, used by the trapezoidal
+  half-cell update.
 
 The existing ``PlaneIndex`` attribute remains the interior expansion/reference
 plane index, while ``ModeIndices`` gives the modes included in the match. Only
-those modes are absorbed. The causal impulse responses and runtime FIR
-histories are not written to the output file. The ``frequency``, ``incident``,
-``outgoing``, ``S``, and validity datasets retain their ordinary meanings for
-matched ports.
+that mode is absorbed, and a matched port therefore has exactly one value in
+``ModeIndices``. ``AnchorFrequencies`` contains the automatically
+resolved or explicit verification anchors plus the exact band centre; these
+frequencies are not interpolated into a broadband matched basis. The
+``frequency``, ``incident``, ``outgoing``, ``S``, and validity datasets retain
+their ordinary meanings for matched ports, but their modal decomposition uses
+the fixed centre-frequency profile at every DFT bin.
 
 The complex ``electric_cross_power_matrix`` and Hermitian ``power_matrix``
 both have shape

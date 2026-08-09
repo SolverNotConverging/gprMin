@@ -1412,8 +1412,9 @@ port and mode.
   transition regions, and is used by every automatic port.
 * Alternatively, ``f7 [f8 ...]`` are explicit, strictly increasing modal
   anchor frequencies. Multiple anchors must cover the required range or the
-  model is rejected with suggested anchors. A single explicit anchor is
-  accepted intentionally as a constant modal basis across the complete band.
+  model is rejected with suggested anchors. For an ordinary port, a single
+  explicit anchor is accepted intentionally as a constant modal basis across
+  the complete band. Matched-port anchor semantics are described below.
 * ``c2`` optionally controls field plots: ``y`` always writes them and ``n``
   always suppresses them. If omitted, geometry-only runs write the plots and
   normal runs do not.
@@ -1435,13 +1436,18 @@ trims that tail for every automatic port and uses the nearest retained modal
 profile for endpoint extrapolation. A failure in the requested band makes
 every automatic port warn and use one shared band-centre anchor.
 
+That fallback applies only to ordinary ports. When ``#eigenmode_match`` is
+attached, the exact band-centre solve is always the fixed runtime and monitor
+basis. Automatic and explicit anchors are retained as verification points and
+as propagation data for estimating group velocity, so a severe tracking
+failure stops the model instead of discarding those checks.
+
 #eigenmode_match:
 -----------------
 
-Attaches the modal absorbing and matched-source boundary of [ALI2000]_ to an
-existing ``#eigenmode_port``. The port remains the interior modal reference
-(expansion) plane; the matched boundary is the outward model-domain face. The
-syntax is:
+Attaches a modal absorbing and matched-source boundary to an existing
+``#eigenmode_port``. The port remains the interior modal reference plane; the
+matched modal-admittance ADE is the outward model-domain face. The syntax is:
 
 .. code-block:: none
 
@@ -1461,43 +1467,55 @@ four cells from ``x0``:
 .. code-block:: none
 
     #pml_cells: 0 0 0 10 0 0
-    #eigenmode_port: 1 0.004 0.001 0.001 0.004 0.007 0.005 + 1 55e9
+    #eigenmode_port: 1 0.004 0.001 0.001 0.004 0.007 0.005 + 1 auto
     #eigenmode_match: 1 4
 
-The command does not create a lossy volume or change the intervening
-geometry. Those ``depth_cells`` must already form a longitudinally uniform
-guide buffer. The matched algorithm samples the total transverse electric
-field at the port plane and causally translates the listed modal components
-to the outward face. Only modes in the port's ``modes`` list are absorbed;
-unlisted modal or radiation content is not matched and can reflect. The port
-aperture must span the complete waveguide opening intended to be matched;
-outward-face nodes outside it retain the ordinary hard-boundary value.
+The command does not create a lossy volume or change the intervening geometry.
+Those ``depth_cells`` must already form a longitudinally uniform guide section;
+they provide physical propagation delay but are not a PML or convolution
+region. The boundary uses the centre-frequency real electric and magnetic mode
+pair as generalized voltage/current coordinates at the outward face. It
+extracts the magnetic coordinate from the adjacent half-time H field with the
+raw Yee surface-power pairing and reconstructs E with its exact power adjoint.
+In those jointly power-normalized coordinates the modal admittance is one. A
+positive half-cell time constant estimated from the anchor slope
+:math:`d\beta/d\omega` completes the passive trapezoidal ADE update. An active
+matched port adds the corresponding characteristic source term at the same
+outer face; its ordinary interior TF/SF injection is disabled.
 
-If this is the port selected by ``#eigenmode_excitation``, the ordinary
-interior TF/SF injection is replaced by the matched-source form of Eq. (19)
-in [ALI2000]_. For excitation mode :math:`m`, gprMax imposes the known source
-term :math:`s(t)-\mathcal{P}_{m,2d}s(t)` while translating the measured modal
-field through :math:`\mathcal{P}_{n,d}`. The result launches the requested
-incident mode and absorbs backward waves in every listed supported mode. A
-matched passive port applies only the modal absorbing term.
+The exact midpoint of ``#eigenmode_band`` is added to the solved frequencies
+even when it was not present in an explicit anchor list. Its modal profile is
+the fixed spatial basis used by the boundary and matched monitor at all
+frequencies. ``auto`` anchors and every explicit anchor verify the centre
+profile and provide the local :math:`\beta(\omega)` slope and positive group
+velocity. They are not interpolated into a broadband runtime profile or
+frequency-dependent admittance. A requested band or verification span greater
+than 25 percent of the centre frequency warns that a relatively narrow band is
+preferable. In a true single-frequency matched band with one anchor, the
+boundary uses centre phase velocity for its half-cell storage and warns that
+group delay is unverified. A finite band needs ``auto`` or explicit anchors
+that bracket its required spectrum. Use ``auto`` unless there is a specific
+reason to choose and inspect every explicit verification frequency.
 
 .. warning::
 
-    This initial implementation intentionally follows the paper's scalar,
-    fixed-profile formulation. The complete buffer aperture must contain one
-    finite, positive, homogeneous, lossless, nondispersive material, and its
-    Yee material and constraint pattern must be identical on every
-    longitudinal plane. Special update stencils such as ``#thin_wire`` are
-    unsupported inside the buffer. Each requested modal electric profile must
-    be effectively real after one phase rotation and effectively invariant
-    over its anchors. Its propagation constants must also be representable by
-    one real, non-negative, frequency-independent cutoff wavenumber. General
-    lossy, dispersive, complex-profile, or frequency-dependent modes are not
-    supported by this boundary. A conventional microstrip air/substrate
-    aperture is therefore unsupported. In those cases, omit
-    ``#eigenmode_match``, keep the ordinary ``#eigenmode_port``, and continue
-    a uniform feed into a sufficiently thick or tuned longitudinal PML.
-    Validate the residual termination reflection by varying the feed length
+    ``#eigenmode_match`` supports exactly one retained mode on a 3D CPU/main
+    grid. It permits a longitudinally uniform cross-section containing
+    multiple finite, positive, lossless, nondispersive materials and ideal
+    PEC/PMC constraints, including a shielded lossless microstrip. The centre
+    E/H pair and every verification anchor must be effectively real and
+    profile-stable; propagation constants must be real and group velocity
+    positive. Its centre-frequency modal admittance is held constant, so use a
+    relatively narrow band and validate accuracy for the actual guide.
+
+    Lossy or dispersive section materials, irreducibly complex or strongly
+    frequency-dependent profiles, multiple retained modes, and special update
+    stencils such as ``#thin_wire`` inside the section are unsupported. When
+    those effects are needed, or when omitted modes or radiation must leave
+    through the aperture, omit ``#eigenmode_match``, keep the ordinary
+    ``#eigenmode_port``, and continue a uniform feed into a sufficiently thick
+    or tuned longitudinal PML. A perturbed guide normally needs PML to absorb
+    the radiated field. Validate residual reflection by varying the feed length
     and PML settings.
 
 .. note::
@@ -1510,13 +1528,8 @@ matched passive port applies only the modal absorbing term.
     * The port coordinate must be exactly ``depth_cells`` grid cells from the
       outward face and strictly inside the domain; ``depth_cells`` does not
       move the port or round its coordinate.
-    * The reference implementation retains the causal impulse response for
-      the complete time window. Its online FIR uses a compiled Cython
-      circular-history kernel, but the total work remains quadratic in the
-      number of time steps (per matched mode), so it is intended first for
-      validation and compact models.
     * ``#eigenmode_match`` supports the main grid and CPU solver only and
-      cannot be used with MPI.
+      cannot be used in 2D or with MPI.
     * Matched apertures cannot overlap, including at shared Yee edges on
       adjacent domain faces.
 

@@ -140,6 +140,16 @@ class EigenmodeAnchorMismatchError(ValueError):
         )
 
 
+def _raise_matched_anchor_mismatch(mismatch):
+    detail = mismatch.detail.rstrip(' .')
+    raise ValueError(
+        f'{detail}. Explicit matched-port anchors are required verification '
+        'and boundary-operator synthesis points; do not replace them with one '
+        'constant-basis anchor. Narrow the band, choose anchors that track '
+        'one modal branch, or use an ordinary eigenmode port followed by PML.'
+    ) from mismatch
+
+
 def _trim_failed_guard_anchors(frequencies, mismatch, fmin, fmax):
     """Trim an untrackable spectral guard while retaining its inner anchor."""
 
@@ -171,9 +181,19 @@ def initialise_eigenmode_ports(grid):
     automatic_ports = [
         port for port in ports if requested_policies[id(port)] == 'auto'
     ]
+    matched_automatic_ports = [
+        port
+        for port in automatic_ports
+        if getattr(port, 'match_depth_cells', None) is not None
+    ]
     if not automatic_ports:
         for port in ports:
-            port.grid_init(grid)
+            try:
+                port.grid_init(grid)
+            except EigenmodeAnchorMismatchError as mismatch:
+                if getattr(port, 'match_depth_cells', None) is not None:
+                    _raise_matched_anchor_mismatch(mismatch)
+                raise
         return
 
     common_anchors = tuple(
@@ -224,7 +244,18 @@ def initialise_eigenmode_ports(grid):
             for port in ports:
                 port.anchor_policy = requested_policies[id(port)]
             if requested_policies[id(failing_port)] != 'auto':
+                if getattr(failing_port, 'match_depth_cells', None) is not None:
+                    _raise_matched_anchor_mismatch(mismatch)
                 raise
+            if matched_automatic_ports:
+                detail = mismatch.detail.rstrip(' .')
+                raise ValueError(
+                    f'{detail}. Automatic anchors are verification points for '
+                    'matched eigenmode ports and cannot fall back to a single '
+                    'basis or discard a significant-spectrum guard. Narrow the '
+                    'band, provide suitable explicit anchors, or use an ordinary '
+                    'eigenmode port followed by PML.'
+                ) from mismatch
 
             guard_result = _trim_failed_guard_anchors(
                 candidate_anchors,
@@ -617,7 +648,8 @@ class EigenmodeSource(Source):
         self.anchor_complex_neff = np.asarray(anchor_neff, dtype=np.complex128)
         self.anchor_overlaps = np.asarray(overlaps, dtype=np.float64)
         self.mode_solvers = solvers
-        self._prepare_broadband_time_traces(G, frequencies)
+        if self.match_depth_cells is None:
+            self._prepare_broadband_time_traces(G, frequencies)
 
         # Keep representative modal data available to diagnostics and callers.
         representative = (

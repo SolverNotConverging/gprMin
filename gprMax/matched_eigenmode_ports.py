@@ -17,106 +17,158 @@
 # You should have received a copy of the GNU General Public License
 # along with gprMax. If not, see <http://www.gnu.org/licenses/>.
 
-"""Matched modal FDTD boundary conditions and numerical translation kernels.
+"""Power-adjoint modal ADE boundary for lossless waveguides.
 
-The scalar translation-operator machinery follows Alimenti et al., *IEEE
-Transactions on Microwave Theory and Techniques*, vol. 48, no. 1, 2000. The
-runtime boundary couples those kernels to gprMax's solved eigenmode profiles
-and CPU time-stepping loop.
-
-The paper's four-node construction is an auxiliary one-dimensional modal
-line used to obtain a one-cell impulse response. It is not a four-cell
-absorbing layer in the three-dimensional FDTD grid.
+The boundary terminates a single 3D mode with a raw-Yee power-adjoint E/H
+pairing and a passive trapezoidal half-cell state. It permits longitudinally
+uniform lossless, nondispersive multi-material guides.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
-import numbers
 
 import numpy as np
-import numpy.typing as npt
 
 import gprMax.config as config
-
-
-def _causal_modal_fir_step_numpy(
-    kernels,
-    history,
-    write_index,
-    valid_history,
-    samples,
-    output,
-):
-    """Source-tree fallback for the compiled circular-history FIR kernel."""
-
-    mode_count, tap_count = kernels.shape
-    history_length = history.shape[1]
-    if tap_count != history_length + 1:
-        raise ValueError("kernels must have exactly one more column than history")
-    if history.shape[0] != mode_count:
-        raise ValueError("kernels and history must have the same mode count")
-    if samples.shape != (mode_count,) or output.shape != (mode_count,):
-        raise ValueError("samples and output must have one value per mode")
-    if not 0 <= valid_history <= history_length:
-        raise ValueError("valid_history is outside the circular-history range")
-    if history_length == 0:
-        if write_index != 0:
-            raise ValueError("write_index must be zero for a zero-length history")
-        output.fill(0)
-        return 0
-    if not 0 <= write_index < history_length:
-        raise ValueError("write_index is outside the circular-history range")
-
-    current = np.array(samples, copy=True)
-    output.fill(0)
-    for lag in range(valid_history):
-        history_index = (write_index - 1 - lag) % history_length
-        output += kernels[:, lag + 1] * history[:, history_index]
-    history[:, write_index] = current
-    return (write_index + 1) % history_length
-
-
-try:
-    from gprMax.cython.matched_eigenmode_convolution import causal_modal_fir_step
-except ImportError:  # Source-tree fallback before extensions are rebuilt.
-    CYTHON_MODAL_FIR_AVAILABLE = False
-
-    class _FallbackDispatcher:
-        def __call__(self, *args):
-            return _causal_modal_fir_step_numpy(*args)
-
-        def __getitem__(self, unused):
-            return _causal_modal_fir_step_numpy
-
-    causal_modal_fir_step = _FallbackDispatcher()
-else:
-    CYTHON_MODAL_FIR_AVAILABLE = True
+from gprMax.modal_admittance import synthesize_passive_admittance
+from gprMax.modal_admittance import yee_staggered_characteristic_admittance
+from gprMax.modal_admittance_ade import bilinear_prewarp_angular_frequency
+from gprMax.modal_admittance_ade import RationalModalAdmittanceADE
 
 
 __all__ = [
-    "CYTHON_MODAL_FIR_AVAILABLE",
-    "CausalModalFIR",
+    "FixedBasisAdmittanceSamples",
     "MatchedEigenmodeBoundary",
-    "cascade_impulse_response",
-    "cascaded_impulse_responses",
+    "constant_modal_admittance_step",
+    "fixed_basis_admittance_samples",
     "initialise_eigenmode_matches",
-    "one_cell_impulse_response",
 ]
 
 
 logger = logging.getLogger(__name__)
 PROFILE_IMAGINARY_TOLERANCE = 1e-8
 PROFILE_OVERLAP_TOLERANCE = 0.999
-CUTOFF_RELATIVE_SPREAD_TOLERANCE = 5e-2
+PROPAGATION_IMAGINARY_TOLERANCE = 1e-8
+MATCHED_BROADBAND_WARNING_FRACTION = 0.25
 GRAM_CONDITION_LIMIT = 1e10
-PROJECTION_RELATIVE_ERROR_BUDGET = 1e-3
-FIR_CYTHON_SIGNATURES = {
-    np.dtype(np.float32): "float",
-    np.dtype(np.float64): "double",
-    np.dtype(np.complex64): "float complex",
-    np.dtype(np.complex128): "double complex",
-}
+SCALAR_FIXED_BASIS_RUNTIME_RESIDUAL_LIMIT = 1e-3
+# The rational path is exercised explicitly by experimental integration tests
+# until coupled Yee/ADE energy and long-time regressions justify making it the
+# production default.
+ENABLE_RATIONAL_ADMITTANCE_RUNTIME = False
+
+
+@dataclass(frozen=True)
+class FixedBasisAdmittanceSamples:
+    """Scalar modal admittance samples expressed in one fixed power gauge.
+
+    The electric and magnetic anchor arrays are deliberately projected against
+    the *centre* magnetic and electric covectors, respectively. Independently
+    normalizing every anchor would make every characteristic admittance equal
+    to one and remove the frequency dependence that a rational model must fit.
+    """
+
+    admittances: np.ndarray
+    voltages: np.ndarray
+    currents: np.ndarray
+    electric_residuals: np.ndarray
+    magnetic_residuals: np.ndarray
+
+
+def fixed_basis_admittance_samples(
+    electric_basis,
+    magnetic_covector,
+    anchor_electric,
+    anchor_magnetic_covectors,
+) -> FixedBasisAdmittanceSamples:
+    """Project anchor E/H pairs into a fixed scalar modal power coordinate.
+
+    All products are unconjugated because anchor phase is part of the complex
+    travelling-wave amplitude. ``electric_basis`` and ``magnetic_covector``
+    must describe the same centre-frequency forward mode and have positive
+    real raw-Yee power pairing. A common complex rescaling of an anchor E/H
+    pair cancels exactly from the returned admittance.
+    """
+
+    basis = np.asarray(electric_basis, dtype=np.complex128)
+    covector = np.asarray(magnetic_covector, dtype=np.complex128)
+    electric = np.asarray(anchor_electric, dtype=np.complex128)
+    magnetic = np.asarray(anchor_magnetic_covectors, dtype=np.complex128)
+    if basis.ndim != 1 or covector.ndim != 1 or basis.shape != covector.shape:
+        raise ValueError(
+            "fixed modal electric basis and magnetic covector must be equal-length "
+            "one-dimensional arrays"
+        )
+    if electric.ndim != 2 or magnetic.ndim != 2 or electric.shape != magnetic.shape:
+        raise ValueError(
+            "anchor electric and magnetic arrays must be equal-shape two-dimensional "
+            "arrays"
+        )
+    if electric.shape[1] != basis.size or electric.shape[0] == 0:
+        raise ValueError("anchor modal arrays are incompatible with the fixed basis")
+    if not all(
+        np.all(np.isfinite(values))
+        for values in (basis, covector, electric, magnetic)
+    ):
+        raise ValueError("fixed-basis modal admittance inputs must be finite")
+
+    power = complex(np.dot(basis, covector))
+    basis_norm = float(np.linalg.norm(basis))
+    covector_norm = float(np.linalg.norm(covector))
+    power_scale = basis_norm * covector_norm
+    if (
+        not np.isfinite(power)
+        or not np.isfinite(power_scale)
+        or power_scale <= 1e-300
+        or power.real <= 64 * np.finfo(np.float64).eps * power_scale
+        or abs(power.imag) > 64 * np.finfo(np.float64).eps * power_scale
+    ):
+        raise ValueError(
+            "fixed modal electric/magnetic basis must have positive real power pairing"
+        )
+    power = float(power.real)
+
+    electric_norms = np.linalg.norm(electric, axis=1)
+    magnetic_norms = np.linalg.norm(magnetic, axis=1)
+    if np.any(electric_norms <= 1e-300) or np.any(magnetic_norms <= 1e-300):
+        raise ValueError("anchor modal electric and magnetic fields must be nonzero")
+    voltage_numerators = electric @ covector
+    voltage_tolerances = (
+        64 * np.finfo(np.float64).eps * electric_norms * covector_norm
+    )
+    if np.any(np.abs(voltage_numerators) <= voltage_tolerances):
+        raise ValueError("an anchor has zero fixed-basis modal voltage")
+    voltages = voltage_numerators / power
+    currents = magnetic @ basis / power
+    admittances = currents / voltages
+
+    electric_residuals = np.linalg.norm(
+        electric - voltages[:, None] * basis[None, :], axis=1
+    ) / electric_norms
+    magnetic_residuals = np.linalg.norm(
+        magnetic - currents[:, None] * covector[None, :], axis=1
+    ) / magnetic_norms
+    if not all(
+        np.all(np.isfinite(values))
+        for values in (
+            voltages,
+            currents,
+            admittances,
+            electric_residuals,
+            magnetic_residuals,
+        )
+    ):
+        raise ValueError("fixed-basis modal admittance projection produced non-finite data")
+
+    return FixedBasisAdmittanceSamples(
+        admittances=np.ascontiguousarray(admittances),
+        voltages=np.ascontiguousarray(voltages),
+        currents=np.ascontiguousarray(currents),
+        electric_residuals=np.ascontiguousarray(electric_residuals),
+        magnetic_residuals=np.ascontiguousarray(magnetic_residuals),
+    )
 
 
 def _positive_integer(value, name: str) -> int:
@@ -129,381 +181,46 @@ def _positive_integer(value, name: str) -> int:
     return int(value)
 
 
-def _real_scalar(value, name: str, *, allow_zero: bool) -> float:
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
-        raise ValueError(f"{name} must be a finite real scalar")
-    result = float(value)
-    if not np.isfinite(result):
-        raise ValueError(f"{name} must be a finite real scalar")
-    outside_domain = result < 0 if allow_zero else result <= 0
-    if outside_domain:
-        qualifier = "non-negative" if allow_zero else "greater than zero"
-        raise ValueError(f"{name} must be {qualifier}")
-    return result
+def constant_modal_admittance_step(
+    previous_voltage,
+    magnetic_coefficient,
+    incident_voltage,
+    tau_over_dt,
+):
+    """Advance the trapezoidal constant-admittance modal load by one sample.
 
-
-def _inexact_dtype(dtype, *, values=None) -> np.dtype:
-    if dtype is None:
-        resolved = np.asarray(values).dtype
-        if resolved.kind not in "fc":
-            resolved = np.dtype(np.float64)
-    else:
-        resolved = np.dtype(dtype)
-    if resolved.kind not in "fc":
-        raise ValueError("dtype must be a real or complex floating-point dtype")
-    return resolved
-
-
-def one_cell_impulse_response(
-    sample_count: int,
-    dt: float,
-    spacing: float,
-    cutoff_wavenumber: float,
-    *,
-    wave_speed: float,
-    dtype=np.float64,
-) -> npt.NDArray[np.inexact]:
-    """Generate the paper's numerical one-cell modal impulse response.
-
-    The modal line obeys Eqs. (35)-(36), while the semi-infinite-line
-    four-node construction is Eq. (38). ``spacing`` is the longitudinal
-    cell size and ``cutoff_wavenumber`` is :math:`k_{c,n}`. ``wave_speed``
-    is the propagation speed used by the configured homogeneous guide.
-
-    The returned samples are ``h[0:sample_count]``. In particular,
-    ``h[0] == 0`` and ``h[1] == B`` when a second sample is requested, so
-    an online convolution never depends on the current input sample.
-
-    Eq. (37) is checked before constructing the response. Inputs exactly at
-    the stability limit are accepted.
-
-    Args:
-        sample_count: Number of causal impulse-response samples to return.
-        dt: FDTD time step.
-        spacing: Longitudinal FDTD cell spacing.
-        cutoff_wavenumber: Non-negative modal cutoff wavenumber.
-        wave_speed: Wave speed in the uniform guide.
-        dtype: Real or complex floating-point output dtype.
-
-    Returns:
-        A contiguous one-dimensional impulse-response array.
-
-    Raises:
-        ValueError: If an input is invalid or Eq. (37) is violated.
+    All inputs are generalized modal coordinates with normalized positive
+    characteristic admittance. ``magnetic_coefficient`` is direction-normalized
+    so that it equals ``a - b`` while electric voltage equals ``a + b``.
+    ``tau_over_dt`` must be positive; this represents the terminal half-cell's
+    electric storage and removes the algebraic load's Nyquist computational
+    mode.
     """
 
-    count = _positive_integer(sample_count, "sample_count")
-    time_step = _real_scalar(dt, "dt", allow_zero=False)
-    cell_spacing = _real_scalar(spacing, "spacing", allow_zero=False)
-    cutoff = _real_scalar(
-        cutoff_wavenumber, "cutoff_wavenumber", allow_zero=True
-    )
-    speed = _real_scalar(wave_speed, "wave_speed", allow_zero=False)
-    output_dtype = _inexact_dtype(dtype)
-    real_dtype = np.empty((), dtype=output_dtype).real.dtype
-
-    stability_limit = 2.0 / (
-        speed * np.hypot(cutoff, 2.0 / cell_spacing)
-    )
-    if not np.isfinite(stability_limit) or time_step > stability_limit:
-        raise ValueError(
-            "dt violates the modal-line stability limit from paper Eq. (37): "
-            f"dt={time_step:g}, limit={stability_limit:g}"
+    previous = np.asarray(previous_voltage)
+    magnetic = np.asarray(magnetic_coefficient)
+    incident = np.asarray(incident_voltage)
+    ratio = np.asarray(tau_over_dt)
+    try:
+        previous, magnetic, incident, ratio = np.broadcast_arrays(
+            previous, magnetic, incident, ratio
         )
-
-    courant_squared = (speed * time_step / cell_spacing) ** 2
-    cutoff_squared = (speed * time_step * cutoff) ** 2
-    coefficient_a = np.asarray(
-        2.0 - 2.0 * courant_squared - cutoff_squared, dtype=real_dtype
-    )[()]
-    coefficient_b = np.asarray(courant_squared, dtype=real_dtype)[()]
-    if not np.isfinite(coefficient_a) or not np.isfinite(coefficient_b):
-        raise ValueError("modal-line coefficients must be finite")
-
-    response = np.zeros(count, dtype=output_dtype)
-    if count == 1:
-        return np.ascontiguousarray(response)
-    response[1] = coefficient_b
-
-    # V_3 and V_4 are the final two nodes of the auxiliary four-node line in
-    # paper Eq. (38). Their samples at i=0 and i=1 are zero by construction.
-    node_3 = np.zeros(count, dtype=output_dtype)
-    node_4 = np.zeros(count, dtype=output_dtype)
-
-    for time_index in range(2, count):
-        response[time_index] = (
-            coefficient_a * response[time_index - 1]
-            - response[time_index - 2]
-            + coefficient_b * node_3[time_index - 1]
-        )
-        node_3[time_index] = (
-            coefficient_a * node_3[time_index - 1]
-            - node_3[time_index - 2]
-            + coefficient_b
-            * (node_4[time_index - 1] + response[time_index - 1])
-        )
-        if time_index > 2:
-            # Eq. (38): sum from ell=2 through i-1. Reversing node_3 makes
-            # this a dot product with ascending h[1], h[2], ... samples.
-            node_4[time_index] = np.dot(
-                response[1 : time_index - 1],
-                node_3[time_index - 1 : 1 : -1],
-            )
-
-    if not (
-        np.all(np.isfinite(response))
-        and np.all(np.isfinite(node_3))
-        and np.all(np.isfinite(node_4))
+    except ValueError as exc:
+        raise ValueError("modal admittance step inputs must be broadcast-compatible") from exc
+    if not all(
+        np.all(np.isfinite(values))
+        for values in (previous, magnetic, incident, ratio)
     ):
-        raise FloatingPointError(
-            "the modal impulse response became non-finite despite a stable input step"
-        )
-    return np.ascontiguousarray(response)
+        raise ValueError("modal admittance step inputs must contain only finite values")
+    if np.any(ratio <= 0):
+        raise ValueError("tau_over_dt must be positive")
+    return (
+        (ratio - 0.5) * previous + 2.0 * incident - magnetic
+    ) / (ratio + 0.5)
 
 
-def _validated_impulse_response(response, *, dtype=None) -> npt.NDArray[np.inexact]:
-    output_dtype = _inexact_dtype(dtype, values=response)
-    values = np.asarray(response, dtype=output_dtype)
-    if values.ndim != 1 or values.size == 0:
-        raise ValueError("impulse_response must be a non-empty one-dimensional array")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("impulse_response must contain only finite values")
-    return np.ascontiguousarray(values)
-
-
-def cascade_impulse_response(
-    impulse_response: npt.ArrayLike,
-    depth_cells: int,
-    *,
-    sample_count: int | None = None,
-    dtype=None,
-) -> npt.NDArray[np.inexact]:
-    """Cascade a causal one-cell FIR through ``depth_cells`` cells.
-
-    Each convolution is truncated to ``sample_count`` causal samples. This is
-    exact over the retained interval: discarded later samples cannot affect
-    an earlier output of a causal convolution. NumPy convolution is used
-    intentionally so this function remains a small executable reference.
-
-    Args:
-        impulse_response: One-cell causal FIR coefficients.
-        depth_cells: Positive number of one-cell operators to cascade.
-        sample_count: Retained output length. The input length is used when
-            omitted.
-        dtype: Optional real or complex floating-point calculation dtype.
-
-    Returns:
-        The causal, truncated impulse response at the requested depth.
-    """
-
-    depth = _positive_integer(depth_cells, "depth_cells")
-    one_cell = _validated_impulse_response(impulse_response, dtype=dtype)
-    if sample_count is None:
-        retained_count = int(one_cell.size)
-    else:
-        retained_count = _positive_integer(sample_count, "sample_count")
-
-    # A zero-cell translation is the convolution identity. Applying the
-    # one-cell response `depth` times then constructs P_d from P_Delta-w.
-    cascaded = np.zeros(retained_count, dtype=one_cell.dtype)
-    cascaded[0] = 1
-    for _ in range(depth):
-        cascaded = np.convolve(cascaded, one_cell)[:retained_count]
-        cascaded = np.asarray(cascaded, dtype=one_cell.dtype)
-    return np.ascontiguousarray(cascaded)
-
-
-def cascaded_impulse_responses(
-    impulse_response: npt.ArrayLike,
-    depth_cells: int,
-    *,
-    sample_count: int | None = None,
-    dtype=None,
-) -> tuple[npt.NDArray[np.inexact], npt.NDArray[np.inexact]]:
-    r"""Return translation kernels for ``depth_cells`` and twice that depth.
-
-    The first result represents :math:`\mathcal{P}_{n,d}`. Convolving it
-    with itself produces :math:`\mathcal{P}_{n,2d}`, the source-cancellation
-    term in paper Eq. (19). Both responses are causally truncated to the same
-    number of samples.
-    """
-
-    depth_response = cascade_impulse_response(
-        impulse_response,
-        depth_cells,
-        sample_count=sample_count,
-        dtype=dtype,
-    )
-    retained_count = int(depth_response.size)
-    double_depth_response = np.convolve(depth_response, depth_response)[
-        :retained_count
-    ]
-    double_depth_response = np.ascontiguousarray(
-        double_depth_response, dtype=depth_response.dtype
-    )
-    return depth_response, double_depth_response
-
-
-class CausalModalFIR:
-    r"""Online causal FIR state for independent scalar modal signals.
-
-    ``kernels`` has shape ``(mode_count, tap_count)``; a one-dimensional
-    kernel denotes one mode. At time index ``i``, :meth:`step` returns
-
-    .. math::
-
-        y_n[i] = \sum_{\ell=1}^{L-1} h_n[\ell]x_n[i-\ell].
-
-    The current samples are stored only *after* this output is evaluated.
-    Combined with the required zero-lag coefficient ``h[:, 0] == 0``, this
-    guarantees that the object cannot create same-step feedback. Supported
-    standard NumPy precisions use a Cython circular-history kernel; unusual
-    extended precisions retain the NumPy fallback.
-    """
-
-    def __init__(self, kernels: npt.ArrayLike, *, dtype=None):
-        resolved_dtype = _inexact_dtype(dtype, values=kernels)
-        coefficients = np.asarray(kernels, dtype=resolved_dtype)
-        if coefficients.ndim == 1:
-            coefficients = coefficients[np.newaxis, :]
-        if (
-            coefficients.ndim != 2
-            or coefficients.shape[0] == 0
-            or coefficients.shape[1] == 0
-        ):
-            raise ValueError(
-                "kernels must have shape (mode_count, tap_count) with non-zero dimensions"
-            )
-        if not np.all(np.isfinite(coefficients)):
-            raise ValueError("kernels must contain only finite values")
-        if np.any(coefficients[:, 0] != 0):
-            raise ValueError(
-                "every modal kernel must have a zero zero-lag coefficient to avoid same-step feedback"
-            )
-
-        self.kernels = np.ascontiguousarray(coefficients).copy()
-        self.kernels.setflags(write=False)
-        self.dtype = self.kernels.dtype
-        self.mode_count = int(self.kernels.shape[0])
-        self.tap_count = int(self.kernels.shape[1])
-        self._history = np.zeros(
-            (self.mode_count, max(0, self.tap_count - 1)), dtype=self.dtype
-        )
-        signature = FIR_CYTHON_SIGNATURES.get(self.dtype)
-        if CYTHON_MODAL_FIR_AVAILABLE and signature is not None:
-            self._step_kernel = causal_modal_fir_step[signature]
-            self.backend = "cython"
-        else:
-            self._step_kernel = _causal_modal_fir_step_numpy
-            self.backend = "numpy"
-        self._write_index = 0
-        self._valid_history = 0
-
-    def reset(self) -> None:
-        """Reset every modal delay line to its zero initial condition."""
-
-        self._history.fill(0)
-        self._write_index = 0
-        self._valid_history = 0
-
-    @property
-    def history(self) -> npt.NDArray[np.inexact]:
-        """Return a copy of past samples, newest first along the last axis."""
-
-        history_length = self._history.shape[1]
-        if history_length == 0:
-            return self._history.copy()
-        newest_first = (
-            self._write_index - 1 - np.arange(history_length)
-        ) % history_length
-        return np.ascontiguousarray(self._history[:, newest_first])
-
-    def step(self, samples: npt.ArrayLike) -> npt.NDArray[np.inexact]:
-        """Translate one scalar sample per mode and advance the FIR state."""
-
-        raw_samples = np.asarray(samples)
-        if raw_samples.ndim == 0 and self.mode_count == 1:
-            raw_samples = raw_samples.reshape(1)
-        if raw_samples.shape != (self.mode_count,):
-            raise ValueError(
-                f"samples must have shape ({self.mode_count},), got {raw_samples.shape}"
-            )
-        if self.dtype.kind != "c" and np.iscomplexobj(raw_samples):
-            raise ValueError("complex samples require a complex FIR dtype")
-        current = np.ascontiguousarray(raw_samples, dtype=self.dtype)
-        if not np.all(np.isfinite(current)):
-            raise ValueError("samples must contain only finite values")
-
-        if self.tap_count == 1:
-            return np.zeros(self.mode_count, dtype=self.dtype)
-
-        translated = np.empty(self.mode_count, dtype=self.dtype)
-        self._write_index = self._step_kernel(
-            self.kernels,
-            self._history,
-            self._write_index,
-            self._valid_history,
-            current,
-            translated,
-        )
-        self._valid_history = min(
-            self._valid_history + 1, self._history.shape[1]
-        )
-        return translated
-
-
-class MatchedEigenmodeBoundary:
-    """Paper-based matched modal boundary attached to one eigenmode port.
-
-    The eigenmode port remains the interior expansion/reference plane. The
-    matched boundary is the corresponding outer domain face, separated by
-    ``depth_cells`` ordinary cells of longitudinally uniform guide. At every
-    integer electric-field time the total tangential field on the expansion
-    plane is projected onto a fixed modal basis, translated causally, and
-    imposed on the outer plane. For the active port, paper Eq. (19) adds the
-    source term ``s - P_2d(s)``.
-
-    This first implementation intentionally accepts only a homogeneous,
-    lossless, nondispersive fill and effectively real, frequency-independent
-    tangential modal profiles. Those restrictions keep the paper's scalar
-    translation operator valid and prevent a frequency-dependent projection
-    from being treated as an instantaneous operation.
-    """
-
-    formulation = "Alimenti2000NumericalModalTranslation"
-
-    def __init__(self, owner, grid):
-        self.owner = owner
-        self.depth_cells = _positive_integer(
-            owner.match_depth_cells, "match_depth_cells"
-        )
-        self.normal_axis = int(owner.normal_axis)
-        self.direction_sign = 1 if owner.direction == "+" else -1
-        self.boundary_index = (
-            0 if self.direction_sign > 0 else int(grid.size[self.normal_axis])
-        )
-        self.expansion_plane_index = int(owner.plane_index)
-        self.mode_indices = tuple(int(value) for value in owner.mode_indices)
-        self.real_dtype = np.dtype(config.sim_config.dtypes["float_or_double"])
-        self._validate_location(grid)
-        self.fill_material = self._validate_uniform_section(grid)
-        self.relative_permittivity = float(self.fill_material.er)
-        self.relative_permeability = float(self.fill_material.mr)
-        self.wave_speed = config.c / np.sqrt(
-            self.relative_permittivity * self.relative_permeability
-        )
-        self.basis, self.dual_basis = self._prepare_fixed_modal_basis(grid)
-        self.cutoff_wavenumbers = self._prepare_cutoff_wavenumbers()
-        self.source_mode_position = None
-        if self.owner.port_monitor.is_source:
-            self.source_mode_position = self.mode_indices.index(
-                int(self.owner.mode_index)
-            )
-
-        self.translation_filter = None
-        self.source_cancellation_filter = None
-        if not getattr(config.sim_config, "geometry_only", False):
-            self._prepare_translation_filters(grid)
+class _MatchedBoundaryGeometry:
+    """Geometry and material validation helpers for the modal ADE boundary."""
 
     def _validate_location(self, grid):
         axis = "xyz"[self.normal_axis]
@@ -594,33 +311,29 @@ class MatchedEigenmodeBoundary:
 
     def _validate_uniform_section(self, grid):
         section = np.asarray(grid.solid[self._section_slices(grid)])
-        material_ids = np.unique(section)
-        if section.size == 0 or material_ids.size != 1:
+        if section.size == 0:
             raise ValueError(
-                f"Eigenmode match on port {self.owner.port_index} requires one "
-                "homogeneous material throughout its longitudinal buffer."
+                f"Eigenmode match on port {self.owner.port_index} has an empty "
+                "longitudinal buffer aperture."
             )
+        normal_planes = np.moveaxis(section, self.normal_axis, 0)
+        reference_section = normal_planes[0]
+        for local_index, candidate_section in enumerate(normal_planes[1:], start=1):
+            if not np.array_equal(candidate_section, reference_section):
+                normal_index = (
+                    local_index
+                    if self.direction_sign > 0
+                    else self.expansion_plane_index + local_index
+                )
+                raise ValueError(
+                    f"Eigenmode match on port {self.owner.port_index} requires "
+                    "one longitudinally uniform material cross-section from the "
+                    "domain boundary to the modal reference plane; the cell "
+                    f"material section changes at normal index {normal_index}."
+                )
+
+        material_ids = {int(value) for value in np.unique(section)}
         material_by_id = {int(material.numID): material for material in grid.materials}
-        material = material_by_id[int(material_ids[0])]
-        dispersive = getattr(material, "poles", 0) or any(
-            name in str(getattr(material, "type", "")).lower()
-            for name in ("debye", "lorentz", "drude")
-        )
-        values = (material.er, material.mr, material.se, material.sm)
-        if (
-            material.ID in ("pec", "pmc")
-            or dispersive
-            or not all(np.isscalar(value) and np.isfinite(value) for value in values)
-            or float(material.er) <= 0
-            or float(material.mr) <= 0
-            or float(material.se) != 0
-            or float(material.sm) != 0
-        ):
-            raise ValueError(
-                f"Eigenmode match on port {self.owner.port_index} requires a "
-                "finite, positive, lossless, nondispersive homogeneous fill; "
-                f"material {material.ID!r} is unsupported."
-            )
 
         # Compare every component-resolved Yee material slice. The modal solve
         # consumes all six E/H tensors and constraint masks, so checking only
@@ -636,7 +349,7 @@ class MatchedEigenmodeBoundary:
         # high-coordinate outer array slot is padding. Tangential E and normal
         # H occupy integer planes and include the outer boundary itself.
         buffer_component_indices = (
-            tuple(range(first_plane, min(final_plane + 1, int(grid.size[self.normal_axis]))))
+            tuple(range(first_plane, min(final_plane, int(grid.size[self.normal_axis]))))
             if self.direction_sign > 0
             else tuple(range(final_plane, first_plane))
         )
@@ -691,7 +404,35 @@ class MatchedEigenmodeBoundary:
                 "longitudinal buffer; found material(s) "
                 f"{', '.join(repr(value) for value in special_stencil_materials)}."
             )
-        return material
+
+        material_ids.update(component_material_ids)
+        section_materials = []
+        for material_id in sorted(material_ids):
+            material = material_by_id[material_id]
+            section_materials.append(material)
+            if material.ID in ("pec", "pmc"):
+                continue
+            dispersive = getattr(material, "poles", 0) or any(
+                name in str(getattr(material, "type", "")).lower()
+                for name in ("debye", "lorentz", "drude")
+            )
+            values = (material.er, material.mr, material.se, material.sm)
+            if (
+                dispersive
+                or not all(
+                    np.isscalar(value) and np.isfinite(value) for value in values
+                )
+                or float(material.er) <= 0
+                or float(material.mr) <= 0
+                or float(material.se) != 0
+                or float(material.sm) != 0
+            ):
+                raise ValueError(
+                    f"Eigenmode match on port {self.owner.port_index} requires "
+                    "positive, lossless, nondispersive section materials; ideal "
+                    f"PEC/PMC constraints are allowed, but material {material.ID!r} is unsupported."
+                )
+        return tuple(section_materials)
 
     def _local_component_view(self, array, local_axis, field_kind, plane_index):
         u_slice, v_slice = self.owner._local_component_ranges(local_axis, field_kind)
@@ -744,209 +485,6 @@ class MatchedEigenmodeBoundary:
             [np.asarray(fields[axis]).ravel() for axis in self.owner.transverse_axes]
         )
 
-    def _prepare_fixed_modal_basis(self, grid):
-        monitor = self.owner.port_monitor
-        anchor_count = len(monitor.anchor_e)
-        if anchor_count == 0 or not self.mode_indices:
-            raise ValueError("an eigenmode match requires solved modal anchors")
-        midpoint = 0.5 * (float(self.owner.dft_start) + float(self.owner.dft_stop))
-        representative = int(
-            np.argmin(np.abs(np.asarray(monitor.anchor_frequencies) - midpoint))
-        )
-        rows = []
-        for mode_position, mode_index in enumerate(self.mode_indices):
-            representative_vector = self._flatten_tangential_fields(
-                monitor.anchor_e[representative][mode_position]
-            ).astype(np.complex128, copy=False)
-            norm = float(np.linalg.norm(representative_vector))
-            if not np.isfinite(norm) or norm <= 1e-300:
-                raise ValueError(
-                    f"Eigenmode match port {self.owner.port_index}, mode {mode_index} "
-                    "has a zero or invalid tangential electric profile."
-                )
-            phase = -0.5 * np.angle(np.sum(representative_vector**2))
-            representative_vector = representative_vector * np.exp(1j * phase)
-            imaginary_residual = float(
-                np.linalg.norm(np.imag(representative_vector))
-                / np.linalg.norm(representative_vector)
-            )
-            if imaginary_residual > PROFILE_IMAGINARY_TOLERANCE:
-                raise ValueError(
-                    f"Eigenmode match port {self.owner.port_index}, mode {mode_index} "
-                    f"has complex-profile residual {imaginary_residual:.3e}; the "
-                    "first implementation requires an effectively real basis."
-                )
-
-            reference_unit = representative_vector / np.linalg.norm(
-                representative_vector
-            )
-            for anchor_index in range(anchor_count):
-                candidate = self._flatten_tangential_fields(
-                    monitor.anchor_e[anchor_index][mode_position]
-                ).astype(np.complex128, copy=False)
-                candidate_norm = float(np.linalg.norm(candidate))
-                if not np.isfinite(candidate_norm) or candidate_norm <= 1e-300:
-                    raise ValueError(
-                        f"Eigenmode match port {self.owner.port_index}, mode "
-                        f"{mode_index} has an invalid anchor profile."
-                    )
-                candidate_unit = candidate / candidate_norm
-                overlap = np.vdot(reference_unit, candidate_unit)
-                overlap_magnitude = float(abs(overlap))
-                if (
-                    not np.isfinite(overlap_magnitude)
-                    or overlap_magnitude < PROFILE_OVERLAP_TOLERANCE
-                ):
-                    raise ValueError(
-                        f"Eigenmode match port {self.owner.port_index}, mode "
-                        f"{mode_index} changes profile across frequency "
-                        f"(minimum overlap {overlap_magnitude:.6f}); a causal "
-                        "frequency-dependent projection is not implemented."
-                    )
-                candidate_unit = candidate_unit * np.exp(-1j * np.angle(overlap))
-                candidate_imaginary_residual = float(
-                    np.linalg.norm(np.imag(candidate_unit))
-                    / np.linalg.norm(candidate_unit)
-                )
-                if candidate_imaginary_residual > PROFILE_IMAGINARY_TOLERANCE:
-                    raise ValueError(
-                        f"Eigenmode match port {self.owner.port_index}, mode "
-                        f"{mode_index} has complex-profile residual "
-                        f"{candidate_imaginary_residual:.3e} at anchor "
-                        f"{monitor.anchor_frequencies[anchor_index]:g} Hz; the "
-                        "first implementation requires an effectively real "
-                        "basis at every anchor."
-                    )
-            rows.append(np.real(representative_vector))
-
-        # Keep the small spatial projection in float64 even for a float32 FDTD
-        # grid. Row normalization makes the condition estimate measure modal
-        # linear independence rather than arbitrary power-normalized amplitude.
-        basis = np.ascontiguousarray(np.vstack(rows), dtype=np.float64)
-        expected_size = sum(
-            self._tangential_component_view(
-                (grid.Ex, grid.Ey, grid.Ez)[axis], axis, self.expansion_plane_index
-            ).size
-            for axis in self.owner.transverse_axes
-        )
-        if basis.shape[1] != expected_size:
-            raise ValueError(
-                "matched modal profile shapes do not match the Yee boundary aperture"
-            )
-        row_norms = np.linalg.norm(basis, axis=1)
-        if np.any(~np.isfinite(row_norms)) or np.any(row_norms <= 1e-300):
-            raise ValueError("matched modal basis contains an invalid row norm")
-        normalized_basis = basis / row_norms[:, np.newaxis]
-        gram = normalized_basis @ normalized_basis.T
-        condition = float(np.linalg.cond(gram))
-        condition_limit = min(
-            GRAM_CONDITION_LIMIT,
-            PROJECTION_RELATIVE_ERROR_BUDGET / np.finfo(self.real_dtype).eps,
-        )
-        if not np.isfinite(condition) or condition >= condition_limit:
-            raise ValueError(
-                f"Eigenmode match port {self.owner.port_index} electric modal "
-                f"Gram matrix is ill-conditioned ({condition:.3e}; limit "
-                f"{condition_limit:.3e} for {self.real_dtype.name})."
-            )
-        normalized_dual = np.linalg.solve(gram, normalized_basis)
-        dual = normalized_dual / row_norms[:, np.newaxis]
-        identity_error = float(
-            np.max(np.abs(dual @ basis.T - np.eye(len(self.mode_indices))))
-        )
-        if (
-            not np.isfinite(identity_error)
-            or identity_error > PROJECTION_RELATIVE_ERROR_BUDGET
-        ):
-            raise ValueError(
-                f"Eigenmode match port {self.owner.port_index} modal dual failed "
-                f"its identity check ({identity_error:.3e})."
-            )
-        return basis, np.ascontiguousarray(dual, dtype=np.float64)
-
-    def _prepare_cutoff_wavenumbers(self):
-        monitor = self.owner.port_monitor
-        frequencies = np.asarray(monitor.anchor_frequencies, dtype=np.float64)
-        neff = np.asarray(monitor.anchor_neff, dtype=np.complex128)
-        cutoff = []
-        for mode_position, mode_index in enumerate(self.mode_indices):
-            omega = 2 * np.pi * frequencies
-            beta = omega * neff[:, mode_position] / config.c
-            cutoff_squared = (omega / self.wave_speed) ** 2 - beta**2
-            scale = np.maximum((omega / self.wave_speed) ** 2, 1.0)
-            if np.any(np.abs(np.imag(cutoff_squared)) > 1e-6 * scale):
-                raise ValueError(
-                    f"Eigenmode match port {self.owner.port_index}, mode {mode_index} "
-                    "has a complex cutoff relation; lossy/complex propagation is "
-                    "not supported by the scalar matched operator."
-                )
-            values = np.real(cutoff_squared)
-            negative_tolerance = 1e-6 * np.max(scale)
-            if np.any(values < -negative_tolerance):
-                raise ValueError(
-                    f"Eigenmode match port {self.owner.port_index}, mode {mode_index} "
-                    "does not yield a physical non-negative cutoff wavenumber."
-                )
-            values = np.maximum(values, 0.0)
-            representative = float(np.median(values))
-            spread_scale = max(
-                representative, 1e-8 * float(np.max(scale)), 1e-300
-            )
-            relative_spread = float(
-                np.max(np.abs(values - representative)) / spread_scale
-            )
-            if relative_spread > CUTOFF_RELATIVE_SPREAD_TOLERANCE:
-                raise ValueError(
-                    f"Eigenmode match port {self.owner.port_index}, mode {mode_index} "
-                    f"has cutoff-squared relative spread {relative_spread:.3e}; "
-                    "the mode is not described by one fixed scalar cutoff."
-                )
-            cutoff.append(np.sqrt(representative))
-        return np.ascontiguousarray(cutoff, dtype=np.float64)
-
-    def _prepare_translation_filters(self, grid):
-        sample_count = int(grid.iterations) + 1
-        depth_kernels = []
-        double_depth_kernels = []
-        for cutoff in self.cutoff_wavenumbers:
-            one_cell = one_cell_impulse_response(
-                sample_count,
-                grid.dt,
-                grid.dl[self.normal_axis],
-                cutoff,
-                wave_speed=self.wave_speed,
-                dtype=self.real_dtype,
-            )
-            depth, double_depth = cascaded_impulse_responses(
-                one_cell,
-                self.depth_cells,
-                sample_count=sample_count,
-                dtype=self.real_dtype,
-            )
-            depth_kernels.append(depth)
-            double_depth_kernels.append(double_depth)
-        self.translation_filter = CausalModalFIR(
-            np.vstack(depth_kernels), dtype=self.real_dtype
-        )
-        if self.source_mode_position is not None:
-            self.source_cancellation_filter = CausalModalFIR(
-                double_depth_kernels[self.source_mode_position],
-                dtype=self.real_dtype,
-            )
-
-    def _read_expansion_field(self, grid):
-        fields = (grid.Ex, grid.Ey, grid.Ez)
-        return np.concatenate(
-            [
-                np.asarray(
-                    self._tangential_component_view(
-                        fields[axis], axis, self.expansion_plane_index
-                    )
-                ).ravel()
-                for axis in self.owner.transverse_axes
-            ]
-        ).astype(np.float64, copy=False)
-
     def _write_boundary_field(self, grid, flattened):
         fields = (grid.Ex, grid.Ey, grid.Ez)
         offset = 0
@@ -958,36 +496,683 @@ class MatchedEigenmodeBoundary:
             target[...] = flattened[offset : offset + size].reshape(target.shape)
             offset += size
 
-    def reset(self):
-        """Reset causal histories and restore the time-zero boundary field."""
 
-        if self.translation_filter is not None:
-            self.translation_filter.reset()
-        if self.source_cancellation_filter is not None:
-            self.source_cancellation_filter.reset()
+class MatchedEigenmodeBoundary(_MatchedBoundaryGeometry):
+    """Power-adjoint, constant-modal-admittance termination.
+
+    The ordinary FDTD cells between the eigenmode reference plane and the
+    outer face provide the propagation delay. At the outer face, the solved
+    centre-frequency electric and magnetic mode pair defines generalized
+    voltage and current coordinates. In those coordinates the normalized
+    characteristic admittance is one, independent of the arbitrary scaling
+    used by the eigensolver.
+
+    A positive half-cell storage time constant completes the Yee boundary in
+    a trapezoidal, energy-passive form. For a passive mode its update is
+
+    ``tau * (V[n+1] - V[n]) / dt + (V[n+1] + V[n]) / 2 = -Q[n+1/2]``.
+
+    An active matched generator replaces the right-hand side by ``2a - Q``.
+    Modal magnetic extraction and electric reconstruction are a discrete
+    power-adjoint pair, which is the essential distinction from an electric
+    least-squares feedback boundary.
+    """
+
+    formulation = "PowerAdjointModalAdmittanceADE"
+
+    def __init__(self, owner, grid):
+        self.owner = owner
+        self.depth_cells = _positive_integer(
+            owner.match_depth_cells, "match_depth_cells"
+        )
+        self.normal_axis = int(owner.normal_axis)
+        self.direction_sign = 1 if owner.direction == "+" else -1
+        self.boundary_index = (
+            0 if self.direction_sign > 0 else int(grid.size[self.normal_axis])
+        )
+        self.expansion_plane_index = int(owner.plane_index)
+        self.mode_indices = tuple(int(value) for value in owner.mode_indices)
+        if len(self.mode_indices) != 1:
+            raise ValueError(
+                "The modal ADE matched boundary supports exactly one retained "
+                "mode; use an ordinary eigenmode port followed by PML for a "
+                "multimode termination."
+            )
+        if self.owner.invariant_axis is not None:
+            raise ValueError(
+                "The modal ADE matched boundary supports 3D ports only; use an "
+                "ordinary eigenmode port followed by PML for a 2D model."
+            )
+        self._validate_location(grid)
+        self._validate_uniform_section(grid)
+
+        (
+            self.basis,
+            self.modal_hu,
+            self.modal_hv,
+        ) = self._prepare_power_modal_basis(grid)
+        self.power_gram = self._prepare_power_gram(grid)
+        (
+            self.group_velocities,
+            self.modal_time_constants,
+        ) = self._prepare_modal_time_constants(grid)
+        self.normalized_admittances = np.ones(
+            len(self.mode_indices), dtype=np.float64
+        )
+        self.fixed_basis_admittance_samples = None
+        self.staggered_characteristic_admittance_samples = np.empty(
+            0, dtype=np.complex128
+        )
+        self.rational_admittance_fit = None
+        self.rational_admittance_fit_error = None
+        self.rational_training_frequencies = np.empty(0, dtype=np.float64)
+        self.rational_validation_frequencies = np.empty(0, dtype=np.float64)
+        self.rational_discrete_poles = np.empty(0, dtype=np.complex128)
+        self.rational_ade = None
+        self.rational_runtime_enabled = False
+        self.rational_runtime_rejection = (
+            "experimental rational runtime is disabled"
+        )
+        try:
+            self.fixed_basis_admittance_samples = (
+                self._prepare_fixed_basis_admittance_samples(grid)
+            )
+            if ENABLE_RATIONAL_ADMITTANCE_RUNTIME:
+                largest_profile_residual = max(
+                    float(
+                        np.max(
+                            self.fixed_basis_admittance_samples.electric_residuals,
+                            initial=0.0,
+                        )
+                    ),
+                    float(
+                        np.max(
+                            self.fixed_basis_admittance_samples.magnetic_residuals,
+                            initial=0.0,
+                        )
+                    ),
+                )
+                if (
+                    largest_profile_residual
+                    > SCALAR_FIXED_BASIS_RUNTIME_RESIDUAL_LIMIT
+                ):
+                    raise ValueError(
+                        "experimental scalar rational matched runtime requires "
+                        "fixed-basis E/H residual no larger than "
+                        f"{SCALAR_FIXED_BASIS_RUNTIME_RESIDUAL_LIMIT:.3e}; "
+                        f"measured {largest_profile_residual:.3e}. The section "
+                        "requires a higher-dimensional discrete DtN model."
+                    )
+            self.rational_admittance_fit = self._prepare_shadow_rational_fit(grid)
+            if ENABLE_RATIONAL_ADMITTANCE_RUNTIME:
+                if self.rational_admittance_fit is None:
+                    raise ValueError(
+                        "experimental rational runtime was requested but no "
+                        "certified fitted model is available"
+                    )
+                self.rational_ade = RationalModalAdmittanceADE(
+                    self.rational_admittance_fit.model,
+                    dt=float(grid.dt),
+                    half_cell_storage=float(self.modal_time_constants[0]),
+                )
+                self.rational_runtime_enabled = True
+                self.rational_runtime_rejection = ""
+        except Exception as exc:
+            if ENABLE_RATIONAL_ADMITTANCE_RUNTIME:
+                raise
+            logger.warning(
+                f"Eigenmode admittance match port {self.owner.port_index} shadow "
+                f"rational diagnostics failed without affecting the production "
+                f"boundary: {exc}"
+            )
+            self.fixed_basis_admittance_samples = None
+            self.staggered_characteristic_admittance_samples = np.empty(
+                0, dtype=np.complex128
+            )
+            self.rational_admittance_fit = None
+            self.rational_admittance_fit_error = str(exc)
+            self.rational_ade = None
+        self.modal_voltage_state = np.zeros(
+            len(self.mode_indices), dtype=np.float64
+        )
+
+        self.source_mode_position = None
+        if self.owner.port_monitor.is_source:
+            self.source_mode_position = self.mode_indices.index(
+                int(self.owner.mode_index)
+            )
+
+    @staticmethod
+    def _common_real_phase(electric, magnetic, transverse_axes):
+        impedance = float(config.sim_config.em_consts["z0"])
+        unconjugated_energy = 0.0j
+        total_energy = 0.0
+        for axis in transverse_axes:
+            efield = np.asarray(electric[axis], dtype=np.complex128)
+            hfield = impedance * np.asarray(magnetic[axis], dtype=np.complex128)
+            unconjugated_energy += np.sum(efield * efield)
+            unconjugated_energy += np.sum(hfield * hfield)
+            total_energy += float(np.vdot(efield, efield).real)
+            total_energy += float(np.vdot(hfield, hfield).real)
+        if (
+            not np.isfinite(total_energy)
+            or total_energy <= 1e-300
+            or not np.isfinite(unconjugated_energy)
+        ):
+            raise ValueError("matched modal E/H basis has zero or invalid energy")
+        return np.exp(-0.5j * np.angle(unconjugated_energy))
+
+    @staticmethod
+    def _real_profile_residual(electric, magnetic, transverse_axes):
+        impedance = float(config.sim_config.em_consts["z0"])
+        total_energy = 0.0
+        imaginary_energy = 0.0
+        for axis in transverse_axes:
+            efield = np.asarray(electric[axis], dtype=np.complex128)
+            hfield = impedance * np.asarray(magnetic[axis], dtype=np.complex128)
+            total_energy += float(np.vdot(efield, efield).real)
+            total_energy += float(np.vdot(hfield, hfield).real)
+            imaginary_energy += float(np.vdot(np.imag(efield), np.imag(efield)).real)
+            imaginary_energy += float(
+                np.vdot(np.imag(hfield), np.imag(hfield)).real
+            )
+        if not np.isfinite(total_energy) or total_energy <= 1e-300:
+            return np.inf
+        return float(np.sqrt(imaginary_energy / total_energy))
+
+    def _centre_anchor_index(self):
+        monitor = self.owner.port_monitor
+        midpoint = 0.5 * (float(self.owner.dft_start) + float(self.owner.dft_stop))
+        frequencies = np.asarray(monitor.anchor_frequencies, dtype=np.float64)
+        matches = np.flatnonzero(
+            np.isclose(
+                frequencies,
+                midpoint,
+                rtol=8 * np.finfo(float).eps,
+                atol=0.0,
+            )
+        )
+        if matches.size != 1:
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} requires "
+                f"exactly one solved modal basis at the band centre {midpoint:g} Hz."
+            )
+        self.basis_frequency = float(frequencies[int(matches[0])])
+        return int(matches[0])
+
+    def _prepare_power_modal_basis(self, grid):
+        monitor = self.owner.port_monitor
+        if not self.mode_indices or not monitor.anchor_e:
+            raise ValueError("an eigenmode admittance match requires solved modal anchors")
+        representative = self._centre_anchor_index()
+        anchor_count = len(monitor.anchor_e)
+        u_axis, v_axis = self.owner.transverse_axes
+        electric_rows = []
+        modal_hu = []
+        modal_hv = []
+        minimum_overlaps = []
+
+        for mode_position, mode_index in enumerate(self.mode_indices):
+            centre_e = [
+                np.asarray(field, dtype=np.complex128)
+                for field in monitor.anchor_e[representative][mode_position]
+            ]
+            centre_h = [
+                np.asarray(field, dtype=np.complex128)
+                for field in monitor.anchor_h[representative][mode_position]
+            ]
+            phase = self._common_real_phase(
+                centre_e, centre_h, self.owner.transverse_axes
+            )
+            centre_e = [field * phase for field in centre_e]
+            centre_h = [field * phase for field in centre_h]
+            residual = self._real_profile_residual(
+                centre_e, centre_h, self.owner.transverse_axes
+            )
+            if residual > PROFILE_IMAGINARY_TOLERANCE:
+                raise ValueError(
+                    f"Eigenmode admittance match port {self.owner.port_index}, "
+                    f"mode {mode_index} has centre E/H complex-profile residual "
+                    f"{residual:.3e}; an effectively real modal pair is required."
+                )
+
+            power = float(np.real(self.owner._modal_cross_power(centre_e, centre_h, grid)))
+            if not np.isfinite(power) or power <= 1e-12:
+                raise ValueError(
+                    f"Eigenmode admittance match port {self.owner.port_index}, "
+                    f"mode {mode_index} has invalid forward modal power {power:g}."
+                )
+            scale = 1.0 / np.sqrt(power)
+            centre_e = [field * scale for field in centre_e]
+            centre_h = [field * scale for field in centre_h]
+
+            mode_minimum_overlap = 1.0
+            for anchor_index in range(anchor_count):
+                candidate_e = [
+                    np.asarray(field, dtype=np.complex128)
+                    for field in monitor.anchor_e[anchor_index][mode_position]
+                ]
+                candidate_h = [
+                    np.asarray(field, dtype=np.complex128)
+                    for field in monitor.anchor_h[anchor_index][mode_position]
+                ]
+                overlap = self.owner._modal_overlap(
+                    centre_e, centre_h, candidate_e, candidate_h
+                )
+                overlap_magnitude = float(abs(overlap))
+                mode_minimum_overlap = min(
+                    mode_minimum_overlap, overlap_magnitude
+                )
+                if (
+                    not np.isfinite(overlap_magnitude)
+                    or overlap_magnitude < PROFILE_OVERLAP_TOLERANCE
+                ):
+                    raise ValueError(
+                        f"Eigenmode admittance match port {self.owner.port_index}, "
+                        f"mode {mode_index} changes E/H profile across frequency "
+                        f"(minimum overlap {overlap_magnitude:.6f}); narrow the "
+                        "band or use an ordinary eigenmode port followed by PML."
+                    )
+                # ``centre_e/h`` are already phase-rotated. The overlap phase
+                # is therefore the complete candidate-to-centre correction;
+                # applying ``phase`` again would rotate the centre anchor twice.
+                align = np.exp(-1j * np.angle(overlap))
+                candidate_e = [field * align for field in candidate_e]
+                candidate_h = [field * align for field in candidate_h]
+                candidate_residual = self._real_profile_residual(
+                    candidate_e, candidate_h, self.owner.transverse_axes
+                )
+                if candidate_residual > PROFILE_IMAGINARY_TOLERANCE:
+                    raise ValueError(
+                        f"Eigenmode admittance match port {self.owner.port_index}, "
+                        f"mode {mode_index} has E/H complex-profile residual "
+                        f"{candidate_residual:.3e} at anchor "
+                        f"{monitor.anchor_frequencies[anchor_index]:g} Hz."
+                    )
+
+            electric_rows.append(self._flatten_tangential_fields(centre_e))
+            modal_hu.append(centre_h[u_axis])
+            modal_hv.append(centre_h[v_axis])
+            minimum_overlaps.append(mode_minimum_overlap)
+
+        self.minimum_profile_overlaps = np.asarray(
+            minimum_overlaps, dtype=np.float64
+        )
+        basis = np.ascontiguousarray(np.real(np.vstack(electric_rows)), dtype=np.float64)
+        return (
+            basis,
+            np.ascontiguousarray(np.real(modal_hu), dtype=np.float64),
+            np.ascontiguousarray(np.real(modal_hv), dtype=np.float64),
+        )
+
+    def _port_measure(self, grid):
+        u_axis, v_axis = self.owner.transverse_axes
+        # The admittance MVP is 3D-only. Native Yee edge pairing uses one
+        # transverse cell area; the 2D monitor's TE factor-of-two correction
+        # belongs only to its cell-averaged DFT quadrature.
+        return float(grid.dl[u_axis] * grid.dl[v_axis])
+
+    def _prepare_power_gram(self, grid):
+        handedness = self.owner._modal_basis_handedness()
+        measure = self._port_measure(grid)
+        # The Yee summation-by-parts boundary term pairs raw E_u nodes with
+        # raw H_v nodes and raw E_v nodes with raw H_u nodes. Cell averaging,
+        # although appropriate for the output DFT quadrature, would introduce
+        # cross terms and break the extraction/reconstruction adjoint identity.
+        outward_covectors = np.concatenate(
+            (
+                handedness * self.modal_hv.reshape(len(self.mode_indices), -1),
+                -handedness * self.modal_hu.reshape(len(self.mode_indices), -1),
+            ),
+            axis=1,
+        )
+        outward_covectors *= measure
+        gram = self.basis @ outward_covectors.T
+        reciprocity_scale = max(float(np.linalg.norm(gram)), 1e-300)
+        reciprocity_residual = float(np.linalg.norm(gram - gram.T) / reciprocity_scale)
+        if reciprocity_residual > 1e-8:
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} modal "
+                f"power Gram reciprocity residual is {reciprocity_residual:.3e}."
+            )
+        symmetric = 0.5 * (gram + gram.T)
+        eigenvalues = np.linalg.eigvalsh(symmetric)
+        scale = max(float(np.max(np.abs(eigenvalues), initial=0.0)), 1.0)
+        tolerance = 64 * np.finfo(np.float64).eps * scale
+        if np.any(eigenvalues <= tolerance):
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} has "
+                "a non-positive modal power Gram matrix."
+            )
+        condition = float(np.linalg.cond(symmetric))
+        if not np.isfinite(condition) or condition >= GRAM_CONDITION_LIMIT:
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} modal "
+                f"power Gram matrix is ill-conditioned ({condition:.3e})."
+            )
+        return np.ascontiguousarray(symmetric, dtype=np.float64)
+
+    def _prepare_fixed_basis_admittance_samples(self, grid):
+        """Measure anchor admittance in the centre-frequency power gauge.
+
+        This is initially diagnostic-only: the production timestep continues
+        to use the order-zero normalized admittance until the rational fitter
+        and positive-real enforcement are independently certified.
+        """
+
+        monitor = self.owner.port_monitor
+        u_axis, v_axis = self.owner.transverse_axes
+        handedness = self.owner._modal_basis_handedness()
+        measure = self._port_measure(grid)
+        centre_covector = measure * np.concatenate(
+            (
+                handedness * self.modal_hv[0].ravel(),
+                -handedness * self.modal_hu[0].ravel(),
+            )
+        )
+        anchor_electric = []
+        anchor_magnetic_covectors = []
+        for anchor_index in range(len(monitor.anchor_e)):
+            electric = monitor.anchor_e[anchor_index][0]
+            magnetic = monitor.anchor_h[anchor_index][0]
+            anchor_electric.append(self._flatten_tangential_fields(electric))
+            anchor_magnetic_covectors.append(
+                measure
+                * np.concatenate(
+                    (
+                        handedness * np.asarray(magnetic[v_axis]).ravel(),
+                        -handedness * np.asarray(magnetic[u_axis]).ravel(),
+                    )
+                )
+            )
+
+        samples = fixed_basis_admittance_samples(
+            self.basis[0],
+            centre_covector,
+            np.asarray(anchor_electric),
+            np.asarray(anchor_magnetic_covectors),
+        )
+        centre_index = self._centre_anchor_index()
+        if not np.isclose(
+            samples.admittances[centre_index],
+            1.0 + 0.0j,
+            rtol=2e-10,
+            atol=2e-12,
+        ):
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} centre "
+                "anchor does not produce unit admittance in the fixed power gauge."
+            )
+        logger.info(
+            f"Eigenmode admittance match port {self.owner.port_index} fixed-basis "
+            f"anchor admittance spans {np.min(np.abs(samples.admittances)):g} to "
+            f"{np.max(np.abs(samples.admittances)):g}; rational synthesis is "
+            "evaluated in shadow mode and remains disabled for runtime use."
+        )
+        return samples
+
+    def _prepare_shadow_rational_fit(self, grid):
+        """Fit and certify a rational load for shadow or experimental use.
+
+        The shadow fit exercises sample extraction, vector fitting, validation,
+        and global passivity enforcement on real modal data. Runtime use is
+        controlled separately by ``ENABLE_RATIONAL_ADMITTANCE_RUNTIME``.
+        """
+
+        frequencies = np.asarray(
+            self.owner.port_monitor.anchor_frequencies, dtype=np.float64
+        )
+        physical_omega = 2 * np.pi * frequencies
+        modal_neff = np.asarray(
+            self.owner.port_monitor.anchor_neff[:, 0], dtype=np.complex128
+        )
+        beta = physical_omega * np.real(modal_neff) / config.c
+        values = yee_staggered_characteristic_admittance(
+            physical_omega,
+            beta,
+            self.fixed_basis_admittance_samples.admittances,
+            normal_spacing=float(grid.dl[self.normal_axis]),
+            dt=float(grid.dt),
+            half_cell_storage=float(self.modal_time_constants[0]),
+        )
+        self.staggered_characteristic_admittance_samples = values
+        centre_index = self._centre_anchor_index()
+        validation_indices = []
+        candidate_orders = (0,)
+        if frequencies.size >= 9:
+            maximum_supported_order = min(
+                8,
+                2 * max(0, (frequencies.size - 5) // 4),
+            )
+            candidate_orders = tuple(
+                range(0, maximum_supported_order + 1, 2)
+            )
+            largest_order = candidate_orders[-1]
+            required_training = (
+                1 if largest_order == 0 else 2 * largest_order + 4
+            )
+            maximum_holdout = frequencies.size - required_training
+            candidates = [
+                index
+                for index in range(1, frequencies.size - 1)
+                if index != centre_index
+            ]
+            if maximum_holdout > 0 and candidates:
+                positions = np.linspace(
+                    0,
+                    len(candidates) - 1,
+                    min(maximum_holdout, len(candidates)),
+                    dtype=int,
+                )
+                validation_indices = sorted({candidates[int(value)] for value in positions})
+        training_mask = np.ones(frequencies.size, dtype=bool)
+        training_mask[validation_indices] = False
+        self.rational_training_frequencies = np.ascontiguousarray(
+            frequencies[training_mask], dtype=np.float64
+        )
+        self.rational_validation_frequencies = np.ascontiguousarray(
+            frequencies[validation_indices], dtype=np.float64
+        )
+        mapped_omega = bilinear_prewarp_angular_frequency(physical_omega, float(grid.dt))
+        validation_kwargs = {}
+        if validation_indices:
+            validation_kwargs = {
+                "validation_angular_frequencies": mapped_omega[validation_indices],
+                "validation_admittances": values[validation_indices],
+            }
+        try:
+            result = synthesize_passive_admittance(
+                mapped_omega[training_mask],
+                values[training_mask],
+                candidate_orders=candidate_orders,
+                direct=1.0,
+                maximum_relative_error=1e-3,
+                maximum_reflection_error=5e-4,
+                passivity_margin=1e-8,
+                **validation_kwargs,
+            )
+        except (RuntimeError, ValueError, np.linalg.LinAlgError) as exc:
+            logger.warning(
+                f"Eigenmode admittance match port {self.owner.port_index} shadow "
+                f"rational synthesis failed and remains disabled: {exc}"
+            )
+            self.rational_admittance_fit_error = str(exc)
+            return None
+        self.rational_admittance_fit_error = None
+        timestep = float(grid.dt)
+        self.rational_discrete_poles = np.ascontiguousarray(
+            (1.0 + 0.5 * timestep * result.model.poles)
+            / (1.0 - 0.5 * timestep * result.model.poles),
+            dtype=np.complex128,
+        )
+        runtime_status = (
+            "experimental runtime use was requested and awaits the final profile gate"
+            if ENABLE_RATIONAL_ADMITTANCE_RUNTIME
+            else "runtime use remains disabled"
+        )
+        logger.info(
+            f"Eigenmode admittance match port {self.owner.port_index} shadow "
+            f"rational synthesis selected {result.model.order} pole(s), maximum "
+            f"validation relative error {result.validation_maximum_relative_error:.3e}, "
+            f"and passed the scalar polynomial passivity search; {runtime_status}."
+        )
+        return result
+
+    def _prepare_modal_time_constants(self, grid):
+        monitor = self.owner.port_monitor
+        frequencies = np.asarray(monitor.anchor_frequencies, dtype=np.float64)
+        neff = np.asarray(monitor.anchor_neff, dtype=np.complex128)
+        centre = self.basis_frequency
+        verification_fractional_span = (
+            float(frequencies[-1] - frequencies[0]) / centre
+            if frequencies.size > 1
+            else 0.0
+        )
+        requested_fractional_span = (
+            float(self.owner.dft_stop - self.owner.dft_start) / centre
+        )
+        fractional_span = max(
+            verification_fractional_span,
+            requested_fractional_span,
+        )
+        if fractional_span > MATCHED_BROADBAND_WARNING_FRACTION:
+            logger.warning(
+                f"Eigenmode admittance match port {self.owner.port_index} "
+                "requested band or verification-anchor span reaches "
+                f"{100 * fractional_span:.1f}% of the centre frequency. "
+                "The centre-frequency E/H pair supplies a constant modal "
+                "admittance; prefer a narrower band when the application permits."
+            )
+        spacing = float(grid.dl[self.normal_axis])
+        group_velocities = []
+        time_constants = []
+        for mode_position, mode_index in enumerate(self.mode_indices):
+            modal_neff = neff[:, mode_position]
+            if np.any(
+                np.abs(np.imag(modal_neff))
+                > PROPAGATION_IMAGINARY_TOLERANCE
+                * np.maximum(1.0, np.abs(np.real(modal_neff)))
+            ):
+                raise ValueError(
+                    f"Eigenmode admittance match port {self.owner.port_index}, "
+                    f"mode {mode_index} requires real lossless propagation constants."
+                )
+            beta = 2 * np.pi * frequencies * np.real(modal_neff) / config.c
+            if frequencies.size >= 2:
+                nearest = np.argsort(np.abs(frequencies - centre))[
+                    : min(3, frequencies.size)
+                ]
+                omega = 2 * np.pi * frequencies[nearest]
+                slope = float(np.polyfit(omega, beta[nearest], 1)[0])
+                group_velocity = 1.0 / slope if slope > 0 else np.nan
+            else:
+                centre_neff = float(np.real(modal_neff[0]))
+                group_velocity = config.c / centre_neff if centre_neff > 0 else np.nan
+                logger.warning(
+                    f"Eigenmode admittance match port {self.owner.port_index}, "
+                    f"mode {mode_index} has only one anchor. Its half-cell "
+                    "storage uses centre phase velocity because group delay "
+                    "cannot be verified; use auto or multiple explicit anchors."
+                )
+            if not np.isfinite(group_velocity) or group_velocity <= 0:
+                raise ValueError(
+                    f"Eigenmode admittance match port {self.owner.port_index}, "
+                    f"mode {mode_index} has invalid estimated group velocity "
+                    f"{group_velocity:g} m/s."
+                )
+            tau = 0.5 * spacing / group_velocity
+            group_velocities.append(group_velocity)
+            time_constants.append(tau)
+            logger.info(
+                f"Eigenmode admittance match port {self.owner.port_index}, mode "
+                f"{mode_index} uses centre E/H profile {centre:g} Hz, normalized "
+                f"admittance 1, estimated group velocity {group_velocity:g} m/s, "
+                f"and boundary half-cell time constant {tau:g} s."
+            )
+        return (
+            np.asarray(group_velocities, dtype=np.float64),
+            np.asarray(time_constants, dtype=np.float64),
+        )
+
+    def _read_boundary_magnetic_coefficients(self, grid):
+        fields = (grid.Hx, grid.Hy, grid.Hz)
+        u_axis, v_axis = self.owner.transverse_axes
+        hplane = self.boundary_index if self.direction_sign > 0 else self.boundary_index - 1
+        raw_hu = self._local_component_view(fields[u_axis], 0, "H", hplane)
+        raw_hv = self._local_component_view(fields[v_axis], 1, "H", hplane)
+        handedness = self.owner._modal_basis_handedness()
+        measure = self._port_measure(grid)
+        outward_covector = np.concatenate(
+            (
+                (-self.direction_sign * handedness * raw_hv).ravel(),
+                (self.direction_sign * handedness * raw_hu).ravel(),
+            )
+        )
+        outward_overlap = self.basis @ (measure * outward_covector)
+        # The outward coefficient is b-a. The public recurrence uses the
+        # direction-normalized magnetic coefficient Q=a-b.
+        coefficients = -np.linalg.solve(self.power_gram, outward_overlap)
+        if not np.all(np.isfinite(coefficients)):
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} "
+                "produced non-finite modal magnetic coefficients."
+            )
+        return coefficients
+
+    def reset(self):
+        """Reset the modal voltage and any fitted characteristic-admittance state."""
+
+        self.modal_voltage_state.fill(0)
+        if self.rational_ade is not None:
+            self.rational_ade.reset()
 
     def update_electric_boundary(self, sample_index, grid):
-        """Impose the matched boundary at electric time ``sample_index * dt``."""
+        """Advance the passive modal-load boundary to one integer E time."""
 
-        if self.translation_filter is None:
+        if sample_index == 0:
+            self.modal_voltage_state.fill(0)
+            if self.rational_ade is not None:
+                self.rational_ade.reset()
+            self._write_boundary_field(grid, self.modal_voltage_state @ self.basis)
             return
-        modal_voltage = self.dual_basis @ self._read_expansion_field(grid)
-        translated_voltage = self.translation_filter.step(modal_voltage)
-        boundary_field = translated_voltage @ self.basis
+
+        old_voltage = self.modal_voltage_state
+        magnetic_voltage = self._read_boundary_magnetic_coefficients(grid)
+        incident = np.zeros(len(self.mode_indices), dtype=np.float64)
         if self.source_mode_position is not None:
-            time = float(sample_index) * grid.dt
+            time = (float(sample_index) - 0.5) * grid.dt
             source_value = (
                 self.owner._waveform_value(time, grid)
                 if self.owner._source_is_active(time)
                 else 0.0
             )
-            twice_translated = self.source_cancellation_filter.step(
-                np.asarray((source_value,), dtype=self.real_dtype)
-            )[0]
-            boundary_field = boundary_field + (
-                source_value - twice_translated
-            ) * self.basis[self.source_mode_position]
-        self._write_boundary_field(grid, boundary_field)
+            incident[self.source_mode_position] = source_value
+
+        if self.rational_runtime_enabled:
+            new_voltage = np.asarray(
+                (
+                    self.rational_ade.step(
+                        -float(magnetic_voltage[0]),
+                        float(incident[0]),
+                    ),
+                ),
+                dtype=np.float64,
+            )
+        else:
+            alpha = self.modal_time_constants / float(grid.dt)
+            new_voltage = constant_modal_admittance_step(
+                old_voltage,
+                magnetic_voltage,
+                incident,
+                alpha,
+            )
+        if not np.all(np.isfinite(new_voltage)):
+            raise ValueError(
+                f"Eigenmode admittance match port {self.owner.port_index} "
+                "produced non-finite modal electric coefficients."
+            )
+        self.modal_voltage_state = np.asarray(new_voltage, dtype=np.float64)
+        self._write_boundary_field(grid, self.modal_voltage_state @ self.basis)
 
 
 def _validate_nonoverlapping_boundaries(boundaries):

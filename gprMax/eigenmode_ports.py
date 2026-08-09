@@ -217,7 +217,31 @@ class EigenmodePortMonitor:
                 "anchor range; endpoint modal profiles will be used."
             )
 
-        weights = self.owner._linear_anchor_weights(self.frequency.astype(np.float64), self.anchor_frequencies)
+        propagation_weights = self.owner._linear_anchor_weights(
+            self.frequency.astype(np.float64), self.anchor_frequencies
+        )
+        if getattr(self.owner, "match_depth_cells", None) is not None:
+            centre_frequency = 0.5 * (self.dft_start + self.dft_stop)
+            centre_matches = np.flatnonzero(
+                np.isclose(
+                    self.anchor_frequencies,
+                    centre_frequency,
+                    rtol=8 * np.finfo(float).eps,
+                    atol=0.0,
+                )
+            )
+            if centre_matches.size != 1:
+                raise ValueError(
+                    f"Matched eigenmode port {self.port_id!r} requires exactly "
+                    f"one centre-frequency anchor at {centre_frequency:g} Hz."
+                )
+            profile_weights = np.zeros(
+                (self.anchor_frequencies.size, self.frequency.size),
+                dtype=np.float64,
+            )
+            profile_weights[int(centre_matches[0]), :] = 1.0
+        else:
+            profile_weights = propagation_weights
         nf = self.frequency.size
         nm = len(self.mode_indices)
         nu, nv = self.owner._transverse_cell_shape()
@@ -237,13 +261,15 @@ class EigenmodePortMonitor:
                 for component in range(3):
                     electric.append(
                         sum(
-                            weights[anchor, frequency_index] * self.anchor_e[anchor][mode_position][component]
+                            profile_weights[anchor, frequency_index]
+                            * self.anchor_e[anchor][mode_position][component]
                             for anchor in range(self.anchor_frequencies.size)
                         )
                     )
                     magnetic.append(
                         sum(
-                            weights[anchor, frequency_index] * self.anchor_h[anchor][mode_position][component]
+                            profile_weights[anchor, frequency_index]
+                            * self.anchor_h[anchor][mode_position][component]
                             for anchor in range(self.anchor_frequencies.size)
                         )
                     )
@@ -272,7 +298,8 @@ class EigenmodePortMonitor:
                     magnetic[v_axis], "hv"
                 )
                 self.neff[frequency_index, mode_position] = np.sum(
-                    weights[:, frequency_index] * self.anchor_neff[:, mode_position]
+                    propagation_weights[:, frequency_index]
+                    * self.anchor_neff[:, mode_position]
                 )
 
         self.eu = np.ascontiguousarray(self.eu)
@@ -485,6 +512,113 @@ class EigenmodePortMonitor:
             group.attrs["MatchDepthCells"] = matched_boundary.depth_cells
             group.attrs["MatchedBoundaryIndex"] = matched_boundary.boundary_index
             group.attrs["MatchedFormulation"] = matched_boundary.formulation
+            group.attrs["MatchedBasisFrequency"] = matched_boundary.basis_frequency
+            group.attrs["MatchedMinimumProfileOverlap"] = (
+                matched_boundary.minimum_profile_overlaps
+            )
+            group.attrs["MatchedNormalizedAdmittance"] = (
+                matched_boundary.normalized_admittances
+            )
+            group.attrs["MatchedModalGroupVelocity"] = (
+                matched_boundary.group_velocities
+            )
+            group.attrs["MatchedModalHalfCellTimeConstant"] = (
+                matched_boundary.modal_time_constants
+            )
+            fixed_samples = matched_boundary.fixed_basis_admittance_samples
+            if fixed_samples is not None:
+                group.attrs["MatchedFixedBasisAdmittanceReal"] = np.real(
+                    fixed_samples.admittances
+                )
+                group.attrs["MatchedFixedBasisAdmittanceImag"] = np.imag(
+                    fixed_samples.admittances
+                )
+                group.attrs["MatchedFixedBasisElectricResidual"] = (
+                    fixed_samples.electric_residuals
+                )
+                group.attrs["MatchedFixedBasisMagneticResidual"] = (
+                    fixed_samples.magnetic_residuals
+                )
+            staggered_samples = (
+                matched_boundary.staggered_characteristic_admittance_samples
+            )
+            if staggered_samples.size:
+                group.attrs["MatchedStaggeredCharacteristicAdmittanceReal"] = (
+                    np.real(staggered_samples)
+                )
+                group.attrs["MatchedStaggeredCharacteristicAdmittanceImag"] = (
+                    np.imag(staggered_samples)
+                )
+            rational_fit = matched_boundary.rational_admittance_fit
+            group.attrs["MatchedRationalRuntimeEnabled"] = (
+                matched_boundary.rational_runtime_enabled
+            )
+            group.attrs["MatchedRationalRuntimeRejection"] = (
+                matched_boundary.rational_runtime_rejection
+            )
+            if rational_fit is None:
+                group.attrs["MatchedRationalShadowStatus"] = "failed-disabled"
+                group.attrs["MatchedRationalShadowFailure"] = (
+                    matched_boundary.rational_admittance_fit_error
+                )
+            else:
+                group.attrs["MatchedRationalShadowStatus"] = (
+                    "certified-enabled"
+                    if matched_boundary.rational_runtime_enabled
+                    else "certified-disabled"
+                )
+                group.attrs["MatchedRationalShadowPoleReal"] = np.real(
+                    rational_fit.model.poles
+                )
+                group.attrs["MatchedRationalShadowPoleImag"] = np.imag(
+                    rational_fit.model.poles
+                )
+                group.attrs["MatchedRationalShadowResidueReal"] = np.real(
+                    rational_fit.model.residues
+                )
+                group.attrs["MatchedRationalShadowResidueImag"] = np.imag(
+                    rational_fit.model.residues
+                )
+                group.attrs["MatchedRationalShadowDirect"] = rational_fit.model.direct
+                group.attrs["MatchedRationalShadowValidationRelativeError"] = (
+                    rational_fit.validation_maximum_relative_error
+                )
+                group.attrs["MatchedRationalShadowValidationReflectionError"] = (
+                    rational_fit.validation_maximum_reflection_error
+                )
+                group.attrs["MatchedRationalShadowRequiredPassivityMargin"] = (
+                    rational_fit.final_passivity_certificate.requested_margin
+                )
+                group.attrs["MatchedRationalShadowMinimumRealAdmittance"] = (
+                    rational_fit.final_passivity_certificate.minimum_real_admittance
+                )
+                group.attrs["MatchedRationalShadowRawPassive"] = (
+                    rational_fit.raw_passivity_certificate.is_passive
+                )
+                group.attrs["MatchedRationalShadowFinalPassive"] = (
+                    rational_fit.final_passivity_certificate.is_passive
+                )
+                group.attrs["MatchedRationalShadowRepairIterations"] = (
+                    rational_fit.repair_iterations
+                )
+                group.attrs["MatchedRationalShadowRelativeCorrection"] = (
+                    rational_fit.relative_parameter_change
+                )
+                group.attrs["MatchedRationalShadowAttemptedOrders"] = (
+                    rational_fit.attempted_orders
+                )
+                group.attrs["MatchedRationalShadowTrainingFrequencies"] = (
+                    matched_boundary.rational_training_frequencies
+                )
+                group.attrs["MatchedRationalShadowValidationFrequencies"] = (
+                    matched_boundary.rational_validation_frequencies
+                )
+                group.attrs["MatchedRationalShadowDiscretePoleReal"] = np.real(
+                    matched_boundary.rational_discrete_poles
+                )
+                group.attrs["MatchedRationalShadowDiscretePoleImag"] = np.imag(
+                    matched_boundary.rational_discrete_poles
+                )
         group.attrs["PhaseReanchorInterval"] = DFT_PHASE_REANCHOR_INTERVAL
         group.attrs["RequestedAnchorPolicy"] = self.owner.requested_anchor_policy
         group.attrs["ResolvedAnchorPolicy"] = self.owner.resolved_anchor_policy

@@ -184,6 +184,18 @@ def test_eigenmode_match_api_rejects_non_integer_depth(monkeypatch, depth_cells)
         EigenmodeMatch(port=1, depth_cells=depth_cells).build(grid)
 
 
+def test_eigenmode_match_api_has_no_formulation_selector(monkeypatch):
+    grid = _configure_grid(monkeypatch)
+    _build_definitions(grid)
+
+    with pytest.raises(ValueError, match="accepts only port and depth_cells"):
+        EigenmodeMatch(
+            port=1,
+            depth_cells=4,
+            formulation="admittance",
+        ).build(grid)
+
+
 def test_eigenmode_match_rejects_unknown_and_duplicate_ports(monkeypatch):
     grid = _configure_grid(monkeypatch)
     _build_definitions(grid)

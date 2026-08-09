@@ -13,7 +13,7 @@ one field component. One shared ``#eigenmode_band`` defines the DFT bins,
 time-domain run can therefore produce multimode S-parameters and, when the
 device radiates, directivity, gain, and realized gain. An optional
 ``#eigenmode_match`` can replace a port's outward PML termination with a
-paper-based matched modal boundary.
+single-mode modal-admittance ADE boundary.
 
 Start with the four examples
 ============================
@@ -39,8 +39,8 @@ they should be used:
      - Rectangular-waveguide-fed pyramidal horn
      - S11, a 3D far field, and E-/H-plane antenna patterns
    * - ``example_4_matched_waveguide``
-     - Air-filled parallel-plate guide with two matched ends and no PML
-     - S11/S21, matched launch at x0, and transient absorption at xmax
+     - Shielded 3D microstrip with two matched ends and no PML
+     - S11/S21, matched launch at x0, and quasi-TEM absorption at xmax
 
 Run the commands below from the repository root. Output is written beside each
 input so that the no-argument plotting scripts can find it.
@@ -154,7 +154,9 @@ writes:
   and transmission coefficient for the two monitored modes;
 * ``straight_waveguide_field_propagation.png``, containing the time-ordered
   transient ``Ez`` snapshots on one common colour scale, through entry into
-  and absorption by the right PML.
+  and absorption by the right PML. The grey background shows the dielectric
+  core beneath the magnitude-dependent transparent field overlay. Red dashed
+  annotated segments mark the two modal reference planes and their apertures.
 
 For a uniform, lossless guide, the launched mode should cross the device with
 mode-1 S21 close to 0 dB. S11 and transmission into mode 2 should remain
@@ -210,6 +212,12 @@ some energy can transition into the other propagating mode. That term appears
 as a non-zero mode-2 S21 trace. The transient plot should show
 the pulse entering the curve, interacting with it, and leaving along the
 rotated guide.
+
+The transient panels draw the complete straight-and-curved dielectric core in
+grey beneath the field. Field transparency decreases with magnitude, so the
+guide remains visible in quiet regions without obscuring the stronger pulse.
+Red dashed annotated segments show the differently oriented port planes over
+their actual apertures.
 
 Try increasing the bend radius or making the transition more gradual. The
 reflection and higher-mode conversion should usually decrease. Conversely, a
@@ -329,29 +337,32 @@ Example 4: two matched terminations without PML
 
 Open
 ``examples/features/eigenmode_ports/example_4_matched_waveguide/matched_waveguide.in``.
-This compact 2D TM model is a uniform air-filled parallel-plate waveguide:
+This 3D model is a uniform, shielded microstrip:
 
 .. literalinclude:: ../../examples/features/eigenmode_ports/example_4_matched_waveguide/matched_waveguide.in
    :language: none
    :caption: ``example_4_matched_waveguide/matched_waveguide.in``
    :linenos:
 
-The example deliberately uses ``#pml_cells: 0``. Port 1 is 10 cells from
-``x0`` and points into the device in ``+x``; port 2 is 10 cells from ``xmax``
-and points in ``-x``. Attaching ``#eigenmode_match`` to each port replaces
-both longitudinal outer terminations. The ordinary air-filled cells between
-each port plane and its outer face are uniform translation buffers; they are
-not a lossy layer and are not overwritten as a multi-cell PML.
+The 0.5 mm grid resolves a 1.5 mm-thick, lossless
+:math:`\epsilon_r=4.4` substrate above an ideal PEC ground plane and a 2 mm-wide
+PEC strip. The enclosing 300 mm by 12 mm by 6 mm domain deliberately uses
+``#pml_cells: 0``. Port 1 is six cells from ``x0`` and points inward in ``+x``;
+port 2 is six cells from ``xmax`` and points inward in ``-x``. Each
+``#eigenmode_match`` terminates the corresponding outer face with the
+single-mode modal-admittance ADE. The six intervening cells remain ordinary,
+uniform microstrip cells: ``depth_cells`` is a placement distance, not a PML
+or a convolution region.
 
-The port apertures span the complete 20 mm opening between the PEC plates.
-The 10--11.5 GHz analysis band and the significant automatic-source spectrum
-lie between the first and second 2D-TM cutoffs, so the example lists only mode
-1. Automatic anchors verify that its effectively real profile and scalar
-cutoff remain fixed enough for the matched formulation. The guide contains no
-discontinuity: S21 should remain close to 0 dB, while S11 shows the residual
-numerical reflection of the source/match/discretisation system. The passive
-``xmax`` boundary absorbs the transmitted packet without a PML or hard end
-wall.
+The 4.3--4.7 GHz band retains only the dominant quasi-TEM mode. An exact solve
+at the band centre supplies the fixed E/H basis used by the matched boundary
+and modal monitor. The automatic anchors verify that this profile stays
+effectively real and stable, and provide the local propagation-constant slope
+used for the boundary half-cell time constant. The guide is intentionally
+unperturbed, so the transmitted packet remains in the one mode that the
+boundary can absorb. The 300 mm guide and 18 ns time window are intentionally
+long enough to separate launch, propagation, arrival at the passive port,
+absorption, and late ring-down in the field snapshots.
 
 Inspect, run, and plot it from the repository root:
 
@@ -361,54 +372,39 @@ Inspect, run, and plot it from the repository root:
    python -m gprMax examples/features/eigenmode_ports/example_4_matched_waveguide/matched_waveguide.in -outputfile examples/features/eigenmode_ports/example_4_matched_waveguide/matched_waveguide
    python examples/features/eigenmode_ports/example_4_matched_waveguide/plot_results.py
 
-The plotting script first verifies the ``Matched`` and ``MatchDepthCells``
-metadata on both ports, then writes:
+The plotting script first verifies the matched-port metadata on both ports,
+then writes:
 
-* ``matched_waveguide_sparameters.png``, showing the near-ideal mode-1 S11 and
-  S21 of the uniform guide; and
+* ``matched_waveguide_sparameters.png``, showing mode-1 S11 and S21; and
 * ``matched_waveguide_field_propagation.png``, showing eight ``Ez`` snapshots
-  on one colour scale. Grey shading marks the two 10-cell translation buffers,
-  and dashed lines mark the reference planes.
+  on one common colour scale. Grey marks the dielectric, yellow marks the PEC
+  ground and strip, red dashed annotated lines mark the port reference planes,
+  pale blue marks their six-cell uniform sections, and dark blue marks the two
+  outer ADE boundary faces.
 
-The early frames show the source packet forming at the left boundary and
-moving through the guide. Intermediate frames show it crossing the passive
-port and disappearing at the outer matched face. The late frames should be
-nearly quiet even though there are no PML cells. Residual fields come from
-finite-grid modal projection, numerical dispersion, truncation to the listed
-mode, and the finite simulation window; refine the grid and extend the time
-window before treating their level as a quantitative reflection limit.
+The snapshots at 2.7, 3.3, 3.9, 4.5, 5.4, 6.6, 8.5, and 15 ns show the source
+packet forming at the left boundary, travelling along the long guide,
+reaching the passive port, and disappearing at the outer matched face. The
+final frame should be nearly quiet even though there are no PML cells.
+Residual fields come from finite-grid modal projection, numerical dispersion,
+the fixed-centre basis,
+truncation to one mode, and the finite time window. The current input gives
+worst-band S11 about -16.2 dB and S21 about -0.06 to +0.02 dB; these figures
+are validation evidence, not a general reflection bound. Refine the grid and
+extend the time window before interpreting their level quantitatively.
 
-This PML-free setup is valid only because the guide is uniform, its complete
-longitudinal openings are covered by the two matches, and all remaining outer
-nodes lie in the PEC plates. A matched aperture opens only the modes listed by
-that port; it does not absorb arbitrary radiation, omitted modes, or
-significant evanescent content. Keep or add PML on every other outer face
-reached by radiation. If unsupported content must leave through the feed
-aperture itself, use an ordinary eigenmode port and a longitudinal PML there.
-
-Why this example is not microstrip
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-A conventional microstrip port contains at least air and substrate in one
-cross-section and usually includes a conducting strip. Lossy substrates,
-finite-conductivity metals, and dispersive material models make the modal
-profiles and propagation constants still more general. Those cases violate
-the homogeneous, lossless, nondispersive scalar translation model used by the
-initial matched implementation, so this tutorial does not present a
-microstrip geometry as if it were supported.
-
-If the required feed is microstrip, stripline with conductors inside the
-aperture, inhomogeneously filled, lossy, dispersive, or has irreducibly complex
-or frequency-dependent modal profiles, do **not** attach
-``#eigenmode_match``. Use an ordinary ``#eigenmode_port`` instead, continue a
-longitudinally uniform feed beyond its reference plane into a sufficiently
-thick or tuned PML, and check the result by refining the mesh, lengthening the
-feed, and varying the PML thickness/settings. The same fallback applies to
-the Python ``EigenmodePort``/``EigenmodeMatch`` API.
+This PML-free setup is valid only because the guide is longitudinally uniform,
+shielded, lossless, nondispersive, and carries one stable guided mode. A
+matched aperture absorbs only its retained mode; it does not absorb radiation,
+omitted guided modes, or significant evanescent content. Perturbing the
+microstrip can create radiated or higher-order fields, so that model needs PML.
+If such content must leave through a feed, use an ordinary eigenmode port,
+continue the uniform feed into a sufficiently thick or tuned longitudinal
+PML, and verify the result by varying the feed length and PML settings.
 
 For this closed-guide input specifically, the direct fallback is to remove
 both ``#eigenmode_match`` lines and change the PML command to
-``#pml_cells: 10 0 0 10 0 0``. The existing port planes then coincide with
+``#pml_cells: 6 0 0 6 0 0``. The existing port planes then coincide with
 the two longitudinal PML interfaces. An open or radiating guide needs PML on
 every outer face reached by radiation, not just this two-face setting.
 
@@ -419,10 +415,10 @@ Matched eigenmode termination and source
 
 An ordinary eigenmode excitation is a TF/SF source at an interior reference
 plane. Reflected fields can cross that source plane, but they still need a
-uniform feed and PML beyond it. ``#eigenmode_match`` instead attaches the
-modal absorbing and matched-source boundary of [ALI2000]_ to an existing
-port. It makes the port plane the interior expansion plane and terminates the
-corresponding outward domain face directly.
+uniform feed and PML beyond it. ``#eigenmode_match`` instead attaches a
+power-adjoint modal-admittance boundary to an existing port. The port remains
+the interior reference plane, while the corresponding outward domain face is
+the absorbing load and, for the active port, the matched source.
 
 The command takes the port number and the exact separation in grid cells:
 
@@ -441,7 +437,7 @@ moves the plane nor creates material. For example, a ``+x`` port at 4 mm on a
 
    #pml_cells: 0 0 0 10 0 0
    #eigenmode_band: wg_band 45e9 65e9 81
-   #eigenmode_port: 1 0.004 0.001 0.001 0.004 0.007 0.005 + 1 55e9
+   #eigenmode_port: 1 0.004 0.001 0.001 0.004 0.007 0.005 + 1 auto
    #eigenmode_match: 1 4
    #eigenmode_excitation: 1 1 auto
 
@@ -458,81 +454,86 @@ to be matched. Tangential electric nodes on the outward domain face but
 outside that aperture retain the ordinary hard-boundary value; the matcher
 does not infer or open a missing part of the cross-section.
 
-At each integer electric-field time, gprMax projects the total transverse
-electric field on the reference plane into the modes listed by the port. For
-a passive port it causally translates those modal voltages across the uniform
-buffer and imposes the reconstructed transverse electric field on the outer
-face. For an active port exciting mode :math:`m`, it uses Eq. (19) of
-[ALI2000]_:
+Modal-admittance ADE
+^^^^^^^^^^^^^^^^^^^^
+
+The physical guide cells between the reference plane and the outward face
+supply the propagation delay. The boundary itself acts only at that face and
+does not translate or convolve the reference-plane field across
+``depth_cells``. The exact centre-frequency electric and magnetic mode pair
+defines generalized modal voltage :math:`V` and direction-normalized magnetic
+coordinate :math:`Q`. E and H are scaled jointly, so their normalized
+characteristic admittance is one without interpreting the eigensolver's
+arbitrary field scale as an impedance in ohms.
+
+At integer E time :math:`n` and adjacent half-integer H time
+:math:`n+1/2`, the passive scalar update is
 
 .. math::
 
-   \mathbf E_t(0,t)
-   = \sum_n \mathcal P_{n,d}V_n(d,t)\mathbf e_n
-   + \left[s(t)-\mathcal P_{m,2d}s(t)\right]\mathbf e_m .
+   \tau\frac{V^{n+1}-V^n}{\Delta t}
+   +\frac{V^{n+1}+V^n}{2}=-Q^{n+1/2}.
 
-Here :math:`s(t)` is the requested source waveform and
-:math:`\mathcal P_{n,d}` is the causal translation operator for mode
-:math:`n`. The subtraction at :math:`2d` prevents the known incident field at
-the expansion plane from being fed back as a reflection. The ordinary TF/SF
-injection at the interior plane is disabled for this active port. The matched
-boundary therefore launches the selected incident mode while absorbing
-backward components in all listed supported modes.
+The positive half-cell storage constant is estimated from the verification
+anchors as
 
-The initial implementation deliberately has the same narrow material and
-modal scope as the scalar paper operator:
+.. math::
 
-* the cells between the outward face and reference plane must be a
-  longitudinally uniform guide buffer;
-* the aperture must span the complete intended waveguide opening on the
-  outward face;
-* the aperture must contain one homogeneous, finite, positive, lossless,
-  nondispersive material, with identical Yee material and constraint slices
-  on every longitudinal plane;
-* special update stencils, including ``#thin_wire``, cannot occupy the matched
-  buffer;
-* every listed transverse modal electric profile must be effectively real
-  after a global phase rotation and effectively unchanged across all modal
-  anchors;
-* each mode must have a real, non-negative cutoff wavenumber that is
-  effectively frequency independent; and
-* only the modes in ``#eigenmode_port`` are matched. An omitted guided,
-  evanescent, or radiation component can reflect from the outer face; and
-* matched apertures cannot overlap one another, including shared Yee edges on
-  adjacent domain faces.
+   \tau=\frac{\Delta w}{2}\frac{d\beta}{d\omega}
+       =\frac{\Delta w}{2v_g}>0.
 
-These checks intentionally reject general lossy, dispersive,
-frequency-dependent, and irreducibly complex-profile modes. A single explicit
-anchor gives a deliberately fixed basis; multiple or automatic anchors are
-accepted only when they verify that the profile and scalar cutoff remain
-effectively constant. Run with ``--geometry-only`` first to solve and inspect
-the modes and to validate the port placement and uniform buffer before a long
-time-domain run.
+For the active source mode, the right-hand side becomes
+:math:`2a^{n+1/2}-Q^{n+1/2}`, where :math:`a` is the requested incident
+waveform. The ordinary interior TF/SF source is disabled. The magnetic
+coordinate is extracted directly from the raw tangential H nodes on the
+boundary-adjacent Yee plane; electric reconstruction uses the exact adjoint
+under the corresponding raw Yee surface-power sum. This power-adjoint pairing,
+together with positive :math:`\tau` and the trapezoidal update, gives the
+single-mode passive load its discrete energy balance.
 
-In particular, a conventional microstrip air/substrate aperture does not meet
-the one-homogeneous-fill requirement. For microstrip or any other rejected
-lossy, dispersive, inhomogeneous, complex-profile, or frequency-dependent
-case, retain the ordinary eigenmode port and terminate a longitudinally
-uniform feed with PML. Validate that fallback by varying feed length and PML
-settings.
+The implementation has an intentionally narrow scope:
 
-For each listed mode, gprMax generates the one-cell numerical impulse response
-from Eqs. (35)--(38) of [ALI2000]_ and causally cascades it to distances
-:math:`d` and :math:`2d`. The runtime filter retains the complete simulation
-history. Its per-step convolution uses a compiled Cython kernel and a circular
-history buffer, avoiding the previous full-array shift while preserving the
-strictly causal ``h[0] = 0`` update order. A NumPy fallback remains available
-for source trees whose extensions have not yet been rebuilt and for unusual
-extended-precision dtypes. This is an executable reference implementation with
-:math:`O(N_\mathrm{modes}N_t^2)` total FIR work and
-:math:`O(N_\mathrm{modes}N_t)` state, so begin with compact models and a
-necessary rather than speculative mode list.
+* exactly one mode may be retained, and the port must be a 3D main-grid port
+  using the CPU solver; 2D and MPI runs are unsupported;
+* the guide buffer must be longitudinally uniform, with identical material
+  and constraint slices from the reference plane to the outward face;
+* multiple finite materials are permitted, but each must have positive
+  constitutive parameters and be lossless and nondispersive; ideal PEC/PMC
+  constraints are permitted;
+* no special update stencil such as ``#thin_wire`` may intersect the buffer;
+* the centre E/H pair must become effectively real under one common phase
+  rotation and remain profile-stable at every verification anchor;
+* :math:`\beta` must be real at the anchors and its local slope must give a
+  positive group velocity; and
+* the aperture must cover the intended guide opening and must not overlap PML,
+  a symmetry face, or another matched aperture.
+
+The admittance is held at its centre-frequency value throughout the requested
+spectrum. ``auto`` and explicit anchors are verification anchors: they check
+the fixed E/H profile and provide the local :math:`\beta(\omega)` slope for
+:math:`v_g`; they are not interpolated into a frequency-dependent runtime
+basis or admittance. For a true single-frequency matched band with only one
+anchor, the half-cell storage uses the centre phase velocity and warns that
+group delay is unverified. A finite band instead needs ``auto`` or explicit
+anchors that bracket its required spectrum. A broad band also warns because
+the constant-admittance approximation is intended for a relatively narrow
+spectrum of interest. Run ``--geometry-only`` first, then check late-time
+stability, S-parameters, and mesh convergence for the actual guide.
+
+Only the retained guided mode is absorbed. Radiation, omitted modes, and
+significant evanescent content can still reflect, so a perturbed or open guide
+normally needs PML. Lossy or dispersive materials, finite-conductivity material
+models, strongly frequency-dependent or irreducibly complex profiles, and
+multimode matched terminations are unsupported. For any such case, use an
+ordinary eigenmode port, continue a uniform feed into PML, and verify the
+termination by varying the feed length and PML settings.
 
 The normal eigenmode datasets and S-parameter CSV remain available. In each
 ``/eigenmode_ports/portN`` HDF5 group, ``Matched`` records whether matching was
-enabled. A matched group also has ``MatchDepthCells``,
-``MatchedBoundaryIndex``, and ``MatchedFormulation`` attributes. See
-:ref:`output-eigenmode-port` for their exact meanings.
+enabled. A matched group also records its depth and boundary index, exact
+centre basis frequency, minimum profile overlap, normalized admittance, group
+velocity, and half-cell time constant. See :ref:`output-eigenmode-port` for the
+exact attribute names and meanings.
 
 For NTFF enclosure validation, the impressed plane of a matched active port is
 the outer matched boundary, not the interior reference plane. An open NTFF
@@ -587,11 +588,13 @@ decompose fields on compatible modal bases. The resolved frequencies and the
 requested/resolved policies are logged and stored in the HDF5 port metadata.
 
 Automatic does not mean that mode identity is guaranteed. Adjacent normalized
-field overlaps are checked; weak overlap warns, while severe tracking failure
-can trim an out-of-band spectral guard or fall back to one shared band-centre
-anchor as described in `Choosing frequency anchors`_. Always inspect the
-modal-field and excitation-spectrum figures from a geometry-only run before
-trusting broadband S-parameters.
+field overlaps are checked; weak overlap warns. For ordinary ports, severe
+tracking failure can trim an out-of-band spectral guard or fall back to one
+shared band-centre anchor as described in `Choosing frequency anchors`_. A
+matched port instead stops because its anchors are required verification and
+matched-model synthesis data. Always inspect the modal-field and
+excitation-spectrum figures from a geometry-only run before trusting broadband
+S-parameters.
 
 S-parameter output details
 ==========================
@@ -758,20 +761,25 @@ the requested band and every significant excitation-spectrum bin, then gives
 that list to every automatic port. It phase-aligns adjacent profiles before
 interpolation. An overlap below 0.9 emits a warning.
 
-An overlap below 0.6 is ambiguous. If the failure is wholly within a spectral
-transition region outside the user-requested band, gprMax trims that outer
-guard and keeps the nearest successfully solved frequency as the endpoint
-anchor. Modal synthesis and decomposition use that endpoint profile for the
-remaining weak spectral tail, while every automatic port retains the same
-trimmed broadband anchor list. If tracking fails within the requested band,
-every automatic port
+An overlap below 0.6 is ambiguous. For ordinary automatic ports, if the
+failure is wholly within a spectral transition region outside the
+user-requested band, gprMax trims that outer guard and keeps the nearest
+successfully solved frequency as the endpoint anchor. Modal synthesis and
+decomposition use that endpoint profile for the remaining weak spectral tail,
+while every automatic port retains the same trimmed broadband anchor list. If
+tracking fails within the requested band, every ordinary automatic port
 instead uses one shared band-centre solve. The warning identifies the failed
 port, mode, frequencies, and overlap; results away from the single anchor may
-be less accurate.
+be less accurate. A matched automatic port stops on either failure because
+discarding an anchor would discard required verification data.
 
-Multiple explicit anchors remain strict: a tracking failure is an error that
-asks for one explicit anchor. Adding anchors can resolve under-sampling, but it
-cannot make a true degeneracy, crossing, or artificial boundary mode safe.
+For ordinary ports, multiple explicit anchors remain strict: a tracking
+failure is an error that asks for one explicit anchor. Matched ports instead
+require explicit anchors to cover the significant spectrum and retain them as
+verification and matched-model synthesis points, so they stop with matched-port
+guidance rather than suggesting the single-anchor shortcut. Adding anchors
+can resolve under-sampling, but it cannot make a true degeneracy, crossing, or
+artificial boundary mode safe.
 Inspect the profiles and remove non-physical modes before interpreting
 S-parameters. The HDF5 port group records ``RequestedAnchorPolicy``,
 ``ResolvedAnchorPolicy``, and ``AnchorFrequencies`` so the final decision can
@@ -1878,11 +1886,12 @@ activation is clipped to the configured waveform start and stop times.
 
 This TF/SF path applies only to an unmatched active port. When
 ``EigenmodeMatch`` is attached, gprMax disables both interior TF/SF
-corrections. It instead imposes the Eq. (19) transverse electric field at the
-outward domain face at each integer electric-field time, before the next
-magnetic update. Magnetic fields retain their normal Yee half-cell and
-half-time staggering; the matched algorithm does not overwrite a magnetic
-boundary plane.
+corrections. Its power-adjoint characteristic source/load update instead
+imposes the transverse electric field at the outward domain face at each
+integer electric-field time, using the adjacent half-step magnetic field. The
+update occurs before the next magnetic update and does not overwrite a
+magnetic boundary plane, so the usual Yee half-cell and half-time staggering
+is retained.
 
 Modal Receivers, Direct DFT, and S-parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

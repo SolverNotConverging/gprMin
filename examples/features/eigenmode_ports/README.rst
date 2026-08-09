@@ -19,9 +19,9 @@ These four numbered examples form the beginner tutorial in
     and realized gain.
 
 ``example_4_matched_waveguide``
-    Terminate both ends of an air-filled parallel-plate waveguide with matched
-    modal boundaries. There is deliberately no PML. Plot very low S11 and
-    near-0 dB S21, then follow the guided pulse until the output matched face
+    Terminate both ends of a lossless, shielded 3D microstrip with single-mode
+    modal-admittance ADE boundaries. There is deliberately no PML. Plot S11
+    and S21, then follow the quasi-TEM pulse until the passive matched face
     absorbs it.
 
 Run every command below from the repository root.
@@ -59,8 +59,9 @@ solver, so do not add ``-gpu`` to this example command.
 Example 4
 =========
 
-This compact 2D example is CPU-only and intentionally sets every PML thickness
-to zero:
+This long 3D example is CPU-only and intentionally sets every PML thickness
+to zero. Its 300 mm guide and 18 ns time window make the quasi-TEM packet's
+travel, absorption at the passive end, and late ring-down visible:
 
 .. code-block:: console
 
@@ -68,15 +69,16 @@ to zero:
     python -m gprMax examples/features/eigenmode_ports/example_4_matched_waveguide/matched_waveguide.in -outputfile examples/features/eigenmode_ports/example_4_matched_waveguide/matched_waveguide
     python examples/features/eigenmode_ports/example_4_matched_waveguide/plot_results.py
 
-The initial matched-boundary formulation is deliberately narrower than an
-ordinary eigenmode port. Its buffer aperture must have one homogeneous,
-lossless, nondispersive fill and fixed, effectively real modal profiles with a
-real scalar cutoff. A conventional microstrip air/substrate cross-section is
-therefore not a valid matched aperture. For microstrip, lossy or dispersive
-materials, or frequency-dependent/complex modes, use an ordinary eigenmode
-port, continue a uniform feed into a longitudinal PML, and verify convergence
-of the termination reflection. A match absorbs only the modes listed by its
-port; omitted guided, evanescent, or radiation content can reflect.
+The matched boundary is deliberately narrower than an ordinary eigenmode port.
+It supports one mode on a 3D CPU/main-grid model. The matched section must be
+longitudinally uniform, and every finite material must be positive, lossless,
+and nondispersive; ideal PEC/PMC constraints are allowed. The fixed
+centre-frequency E/H profile must remain effectively real and stable over a
+relatively narrow band. Lossy, dispersive, multimode, strongly
+frequency-dependent, complex-profile, or radiating cases should use an
+ordinary eigenmode port followed by a longitudinal PML. A match absorbs only
+the retained guided mode. Perturbing the guide can create radiation or omitted
+modes, so such a model needs PML.
 
 Generated CSV, HDF5, VTK-HDF, modal-field, snapshot, and result-plot files are
 ignored by Git and can be recreated by rerunning the examples. The larger

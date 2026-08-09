@@ -1,39 +1,40 @@
-#title: Example 4 - PML-free matched parallel-plate waveguide
+#title: Example 4 - PML-free matched shielded microstrip
 
-#domain_mode: TM
-#domain: 0.120 0.030 inf
-#dx_dy_dz: 0.001 0.001 0.001
-#time_window: 5e-9
+#domain: 0.300 0.012 0.006
+#dx_dy_dz: 0.0005 0.0005 0.0005
+#time_window: 18e-9
 
-## This example deliberately has no PML. The two longitudinal faces are
-## terminated by matched eigenmode boundaries, while the transverse faces are
-## closed by the PEC plates below.
+## This uniform, shielded microstrip is lossless and nondispersive. It
+## deliberately has no PML: the two longitudinal faces are terminated by
+## matched eigenmode boundaries for the retained quasi-TEM mode.
 #pml_cells: 0
 
-## A uniform 20 mm air-filled parallel-plate guide. There is intentionally no
-## discontinuity. Only listed modes are absorbed: add other supported modes,
-## or use an ordinary port with PML where unsupported/radiated field must leave.
-#box: 0 0 0 0.120 0.005 inf pec
-#box: 0 0.025 0 0.120 0.030 inf pec
+#material: 4.4 0 1 0 substrate
 
-## The significant automatic source spectrum lies between the first and
-## second 2D-TM cutoffs. Each port is 10 cells from its outward domain face,
-## and its aperture spans the complete guide opening.
-#eigenmode_band: matched_band 10e9 11.5e9 21
-#eigenmode_port: 1 0.010 0.005 0 0.010 0.025 inf + 1 auto
-#eigenmode_port: 2 0.110 0.005 0 0.110 0.025 inf - 1 auto
-#eigenmode_match: 1 10
-#eigenmode_match: 2 10
+## PEC ground plane, dielectric substrate, and 2 mm-wide PEC strip.
+#box: 0 0 0 0.300 0.012 0.0005 pec
+#box: 0 0 0.0005 0.300 0.012 0.0020 substrate
+#box: 0 0.005 0.0020 0.300 0.007 0.0025 pec
+
+## Each reference plane is six ordinary, uniform guide cells from its outward
+## domain face. The matched ADE acts at that face; depth_cells is not a PML or
+## a convolution region. Only the listed mode is absorbed.
+#eigenmode_band: microstrip_band 4.3e9 4.7e9 21
+#eigenmode_port: 1 0.003 0 0.0005 0.003 0.012 0.006 + 1 auto
+#eigenmode_port: 2 0.297 0 0.0005 0.297 0.012 0.006 - 1 auto
+#eigenmode_match: 1 6
+#eigenmode_match: 2 6
 #eigenmode_excitation: 1 1 auto
+#rx: 0.150 0.006 0.003
 
-## The common colour scale in plot_results.py makes the late quiet frames a
-## direct visual check that xmax launches no visible return after the guided
-## pulse crosses its passive matched port.
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 0.80e-9 matched_waveguide_0800ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 1.20e-9 matched_waveguide_1200ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 1.60e-9 matched_waveguide_1600ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 2.00e-9 matched_waveguide_2000ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 2.40e-9 matched_waveguide_2400ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 2.80e-9 matched_waveguide_2800ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 3.50e-9 matched_waveguide_3500ps.h5
-#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 4.50e-9 matched_waveguide_4500ps.h5
+## Thin one-cell snapshots through the strip centre become an x-z field cut.
+## The common scale in plot_results.py follows the pulse from launch, along the
+## long uniform guide, into the passive matched face, and through ring-down.
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 2.70e-9 matched_microstrip_2700ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 3.30e-9 matched_microstrip_3300ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 3.90e-9 matched_microstrip_3900ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 4.50e-9 matched_microstrip_4500ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 5.40e-9 matched_microstrip_5400ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 6.60e-9 matched_microstrip_6600ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 8.50e-9 matched_microstrip_8500ps.h5
+#snapshot: 0 0.006 0 0.300 0.0065 0.006 0.0005 0.0005 0.0005 15.0e-9 matched_microstrip_15000ps.h5

@@ -2,7 +2,6 @@
 References
 **********
 
-.. [ALI2000] Alimenti, F., Mezzanotte, P., Roselli, L., & Sorrentino, R. (2000). A revised formulation of modal absorbing and matched modal source boundary conditions for the efficient FDTD analysis of waveguide structures. IEEE Transactions on Microwave Theory and Techniques, 48(1), 50-59. (https://doi.org/10.1109/22.817471)
 .. [BAL2005] Balanis, C. A. (2005). Antenna theory: analysis and design (Vol. 1). John Wiley & Sons.
 .. [BER1998] Bergmann, T., Robertsson, J. O., & Holliger, K. (1998). Finite-difference modeling of electromagnetic wave propagation in dispersive and attenuating media. Geophysics, 63(3), 856-867. (http://dx.doi.org/10.1190/1.1444396)
 .. [BOU1996] Bourgeois, J. M., & Smith, G. S. (1996). A fully three-dimensional simulation of a ground-penetrating radar: FDTD theory compared with experiment. Geoscience and Remote Sensing, IEEE Transactions on, 34(1), 36-44. (http://dx.doi.org/10.1109/36.481890)

@@ -513,8 +513,8 @@ range or waveform:
         port=1, mode=1, waveform='auto', plot_waveform=True,
     ))
 
-Matching is optional. To replace the outward termination associated with
-port 1 by the paper-based matched modal boundary, add:
+Matching is optional. To replace the outward termination associated with port
+1 by a power-adjoint modal-admittance ADE, add:
 
 .. code-block:: python
 
@@ -536,7 +536,11 @@ nodes outside it retain the ordinary hard-boundary value.
 receive one common anchor list covering both the shared DFT band and the
 significant source spectrum. Multiple explicit frequencies must cover that
 required range; one explicit frequency intentionally uses a fixed modal basis
-over the complete band.
+over the complete band for an ordinary port. A matched port has different
+semantics: an exact band-centre solve is always added and supplies its fixed
+runtime and monitor basis. Automatic and explicit anchors serve as
+profile-verification points and propagation data: they verify the fixed E/H
+pair and estimate group velocity from the local propagation-constant slope.
 
 The automatic excitation is a finite real band-pass pulse with independently
 adapted Gaussian-smoothed lower and upper edges. It is placed at the earliest
@@ -550,28 +554,37 @@ figure. ``True`` writes it, ``False`` suppresses it, and the default ``None``
 writes it only for geometry-only runs. Each port's ``plot_fields`` setting
 continues to control only that port's modal-field figures.
 
-The matched buffer must be longitudinally uniform and use one homogeneous,
-lossless, nondispersive fill. Matching is limited to the modes listed by that
-``EigenmodePort`` and requires effectively real, frequency-independent modal
-profiles whose dispersion is described by one real scalar cutoff. On an
-active port the usual TF/SF source is replaced by the matched-source Eq. (19)
-of [ALI2000]_: the source launches the selected mode while the boundary
-absorbs backward components of every listed supported mode. The causal
-full-history FIR uses a compiled circular-buffer Cython kernel, but still has
-quadratic total work in the number of time steps per matched mode. See
-:doc:`eigenmode_port` for placement, validation, and output metadata.
-Conventional microstrip and other inhomogeneous, lossy, dispersive,
-complex-profile, or frequency-dependent port sections are not supported by
-``EigenmodeMatch``. Use the ordinary ``EigenmodePort`` for those cases,
-continue a longitudinally uniform feed into PML, and verify the termination by
-varying the feed length and PML settings.
+Matching supports one retained mode on a 3D CPU/main-grid model. The matched
+section must be longitudinally uniform; it may contain multiple finite,
+positive, lossless, nondispersive materials and ideal PEC/PMC constraints,
+including a shielded microstrip. The centre-frequency E/H pair defines a
+constant normalized modal admittance. The boundary extracts the adjacent
+half-step H field with the raw Yee surface-power pairing and reconstructs E
+with the power-adjoint basis. A positive half-cell time constant comes from the
+anchor :math:`d\beta/d\omega` slope; the ordinary cells between the port plane
+and outer face supply the delay.
 
-Severe tracking mismatch between explicit multiple anchors is an error that
-recommends one explicit anchor. With automatic anchors, a failure confined to
-an outer spectral guard trims that tail for every automatic port. A failure
-inside the requested band makes every automatic port warn and use one shared
-band-centre anchor; results far from it may be inaccurate. See
-:doc:`eigenmode_port` for the complete workflow and outputs.
+The fixed centre-frequency model is intended for a relatively narrow band. A
+span greater than 25 percent of the centre frequency warns. In a true
+single-frequency matched band, one anchor uses phase velocity and warns that
+group delay is unverified; a finite band needs ``'auto'`` or explicit anchors
+that bracket its required spectrum. Lossy, dispersive, multimode, irreducibly
+complex, strongly frequency-dependent, or radiating cases should use the
+ordinary ``EigenmodePort`` followed by a sufficiently thick or tuned PML. A
+perturbed guide needs PML for radiated fields. Verify the termination by
+varying feed length and PML settings. See :doc:`eigenmode_port` for placement,
+validation, and output metadata.
+
+For ordinary ports, severe tracking mismatch between explicit multiple
+anchors is an error that recommends one explicit anchor. With automatic
+anchors, a failure confined to an outer spectral guard trims that tail for
+every automatic port. A failure inside the requested band makes every
+automatic port warn and use one shared
+band-centre anchor; results far from it may be inaccurate. These automatic
+fallbacks apply only to ordinary ports. A matched port stops on severe
+tracking failure because its anchors are required verification and group-delay
+data. See :doc:`eigenmode_port` for the complete workflow and
+outputs.
 
 Voltage Source
 --------------

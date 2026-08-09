@@ -1874,7 +1874,7 @@ class EigenmodePort(GridUserObject):
 
 
 class EigenmodeMatch(GridUserObject):
-    '''Attach a longitudinal matched-boundary depth to an eigenmode port.'''
+    '''Attach a power-adjoint modal ADE boundary to an eigenmode port.'''
 
     @property
     def order(self):
@@ -1890,6 +1890,13 @@ class EigenmodeMatch(GridUserObject):
     def build(self, grid: FDTDGrid):
         if isinstance(grid, SubGridBaseGrid):
             raise ValueError(f'{self.params_str()} currently supports only the main grid.')
+        unsupported = sorted(set(self.kwargs) - {'port', 'depth_cells'})
+        if unsupported:
+            raise ValueError(
+                f'{self.params_str()} has unsupported parameter(s): '
+                + ', '.join(unsupported)
+                + '. EigenmodeMatch accepts only port and depth_cells.'
+            )
         try:
             port = int(self.kwargs['port'])
             depth_value = self.kwargs['depth_cells']
@@ -1908,10 +1915,14 @@ class EigenmodeMatch(GridUserObject):
         port_spec = grid.eigenmodeportdefs[port]
         if port_spec.match is not None:
             raise ValueError(f'Eigenmode port {port} already has an EigenmodeMatch.')
-        port_spec.match = EigenmodeMatchSpec(port=port, depth_cells=depth_cells)
+        port_spec.match = EigenmodeMatchSpec(
+            port=port,
+            depth_cells=depth_cells,
+        )
         logger.info(
             f'{self.grid_name(grid)}Eigenmode port {port} matched-boundary depth '
-            f'set to {depth_cells} longitudinal cell(s).'
+            f'set to {depth_cells} longitudinal cell(s), using the '
+            'power-adjoint modal ADE formulation.'
         )
 
 
@@ -2039,6 +2050,8 @@ class EigenmodeExcitation(GridUserObject):
             runtime.requested_anchor_policy = port.anchor_policy
             runtime.resolved_anchor_policy = port.anchor_policy
             runtime.fallback_frequency = 0.5 * (band.fmin + band.fmax)
+            if port.match is not None:
+                runtime.representative_frequency = runtime.fallback_frequency
         grid.eigenmodeexcitation = self
         logger.info(
             f'{self.grid_name(grid)}Eigenmode excitation created on port '
