@@ -239,6 +239,7 @@ def check_cmd_names(processedlines, checkessential=True):
         for key in [
             '#eigenmode_band',
             '#eigenmode_port',
+            '#eigenmode_match',
             '#eigenmode_excitation',
             "#geometry_view",
             "#geometry_objects_write",

@@ -31,11 +31,78 @@ def _load_example_plotter():
     return module
 
 
+def _load_matched_example_plotter():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "examples"
+        / "features"
+        / "eigenmode_ports"
+        / "example_4_matched_waveguide"
+        / "plot_results.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "matched_eigenmode_example_plotter", path
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _write_snapshot(path: Path, time_ns: float):
     with h5py.File(path, "w") as output:
         output.attrs["time"] = time_ns * 1e-9
         output.attrs["dx_dy_dz"] = (0.001, 0.001, 0.001)
         output["Ez"] = np.full((3, 2, 1), time_ns)
+
+
+def _write_matched_example_output(stem: Path):
+    csv_path = stem.with_name(stem.name + "_sparameters.csv")
+    fieldnames = (
+        "frequency_hz",
+        "source_port",
+        "source_mode",
+        "destination_port",
+        "destination_mode",
+        "S_magnitude_db",
+        "valid",
+    )
+    with csv_path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
+        writer.writeheader()
+        for frequency, destination_port, magnitude_db, valid in (
+            (11.5e9, 1, -18.0, 1),
+            (10.0e9, 1, -22.0, 1),
+            (11.5e9, 2, -1.5, 1),
+            (10.0e9, 2, -0.8, 1),
+            (10.75e9, 2, 100.0, 0),
+        ):
+            writer.writerow(
+                {
+                    "frequency_hz": frequency,
+                    "source_port": 1,
+                    "source_mode": 1,
+                    "destination_port": destination_port,
+                    "destination_mode": 1,
+                    "S_magnitude_db": magnitude_db,
+                    "valid": valid,
+                }
+            )
+
+    with h5py.File(stem.with_suffix(".h5"), "w") as output:
+        ports = output.create_group("eigenmode_ports")
+        for port_number, boundary_index in ((1, 0), (2, 120)):
+            port = ports.create_group(f"port{port_number}")
+            port.attrs["Matched"] = True
+            port.attrs["MatchDepthCells"] = 10
+            port.attrs["MatchedBoundaryIndex"] = boundary_index
+            port.attrs["ModeIndices"] = (1,)
+            port.attrs["MatchedFormulation"] = "Alimenti2000NumericalModalTranslation"
+
+    snapshot_dir = stem.with_name(stem.name + "_snaps")
+    snapshot_dir.mkdir()
+    _write_snapshot(snapshot_dir / "late_name.h5", 0.8)
+    _write_snapshot(snapshot_dir / "early_name.h5", 1.6)
+    _write_snapshot(snapshot_dir / "middle_name.h5", 1.2)
 
 
 def _write_case(root, source_mode, primary_transmission_db=-1, case_name=None):
@@ -119,6 +186,30 @@ def test_example_snapshots_are_sorted_by_physical_time_and_can_be_capped(
     snapshots = plotter.read_field_snapshots(stem, maximum_time_ns=1.0)
 
     assert [snapshot[0] for snapshot in snapshots] == pytest.approx([0.4, 1.0])
+
+
+def test_matched_waveguide_example_plotter_consumes_synthetic_outputs(tmp_path, monkeypatch):
+    plotter = _load_matched_example_plotter()
+    stem = tmp_path / "matched_waveguide"
+    sparameter_plot = tmp_path / "matched_waveguide_sparameters.png"
+    field_plot = tmp_path / "matched_waveguide_field_propagation.png"
+    _write_matched_example_output(stem)
+    monkeypatch.setattr(plotter, "OUTPUT_STEM", stem)
+    monkeypatch.setattr(plotter, "SPARAMETER_PLOT_PATH", sparameter_plot)
+    monkeypatch.setattr(plotter, "FIELD_PLOT_PATH", field_plot)
+
+    plotter.main()
+
+    traces = plotter.read_sparameters(stem)
+    assert set(traces) == {1, 2}
+    assert traces[1][:, 0].tolist() == [10.0, 11.5]
+    assert traces[2][:, 1].tolist() == [-0.8, -1.5]
+    snapshots = plotter.read_field_snapshots(stem)
+    assert [snapshot[0] for snapshot in snapshots] == pytest.approx(
+        [0.8, 1.2, 1.6]
+    )
+    assert sparameter_plot.stat().st_size > 0
+    assert field_plot.stat().st_size > 0
 
 
 def test_regression_snapshot_plot_ignores_stale_generated_files(tmp_path):

@@ -32,6 +32,7 @@ import gprMax.config as config
 from gprMax.eigenmode_config import (
     EigenmodeBandSpec,
     EigenmodeBandpassWaveform,
+    EigenmodeMatchSpec,
     EigenmodePortSpec,
 )
 from gprMax.grid.fdtd_grid import FDTDGrid
@@ -1872,12 +1873,54 @@ class EigenmodePort(GridUserObject):
         )
 
 
+class EigenmodeMatch(GridUserObject):
+    '''Attach a longitudinal matched-boundary depth to an eigenmode port.'''
+
+    @property
+    def order(self):
+        return 22
+
+    @property
+    def hash(self):
+        return '#eigenmode_match'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def build(self, grid: FDTDGrid):
+        if isinstance(grid, SubGridBaseGrid):
+            raise ValueError(f'{self.params_str()} currently supports only the main grid.')
+        try:
+            port = int(self.kwargs['port'])
+            depth_value = self.kwargs['depth_cells']
+        except KeyError:
+            logger.exception(f'{self.params_str()} requires port and depth_cells.')
+            raise
+        if isinstance(depth_value, (bool, np.bool_)) or not isinstance(
+            depth_value, (int, np.integer)
+        ):
+            raise ValueError(f'{self.params_str()} depth_cells must be an integer.')
+        depth_cells = int(depth_value)
+        if depth_cells < 1:
+            raise ValueError(f'{self.params_str()} depth_cells must be one or greater.')
+        if port not in grid.eigenmodeportdefs:
+            raise ValueError(f'{self.params_str()} references unknown eigenmode port {port}.')
+        port_spec = grid.eigenmodeportdefs[port]
+        if port_spec.match is not None:
+            raise ValueError(f'Eigenmode port {port} already has an EigenmodeMatch.')
+        port_spec.match = EigenmodeMatchSpec(port=port, depth_cells=depth_cells)
+        logger.info(
+            f'{self.grid_name(grid)}Eigenmode port {port} matched-boundary depth '
+            f'set to {depth_cells} longitudinal cell(s).'
+        )
+
+
 class EigenmodeExcitation(GridUserObject):
     '''Attach the single active modal excitation to a defined port.'''
 
     @property
     def order(self):
-        return 22
+        return 23
 
     @property
     def hash(self):
@@ -1903,6 +1946,7 @@ class EigenmodeExcitation(GridUserObject):
             'dft_stop': band.fmax,
             'dft_points': band.points,
             'plot_fields': port.plot_fields,
+            'match_depth_cells': port.match_depth_cells,
         }
         if len(port.resolved_anchors) == 1:
             kwargs['frequency'] = port.resolved_anchors[0]
@@ -2213,6 +2257,7 @@ class _EigenmodeSourceBuilder(GridUserObject):
         source.dft_start = dft_start
         source.dft_stop = dft_stop
         source.dft_points = dft_points
+        source.match_depth_cells = self.kwargs.get('match_depth_cells')
         source.waveformID = waveform_id
         source.waveform = next(x for x in grid.waveforms if x.ID == waveform_id)
         source.start = 0
@@ -2346,7 +2391,13 @@ class _EigenmodeReceiverBuilder(GridUserObject):
         face = f"{axis_name}0" if direction == "+" else f"{axis_name}max"
         pml_thickness = grid.pmls["thickness"][face]
         adjacent_plane = pml_thickness if direction == "+" else grid.size[normal_axis] - pml_thickness
-        if pml_thickness == 0:
+        match_depth_cells = self.kwargs.get('match_depth_cells')
+        if match_depth_cells is not None:
+            logger.info(
+                f"Eigenmode receiver {port_id!r} uses a matched modal "
+                f"termination on {face} instead of a PML."
+            )
+        elif pml_thickness == 0:
             logger.warning(
                 f"Eigenmode receiver {port_id!r} is not next to a PML because the "
                 f"{face} face has zero PML thickness. Reflections beyond the port "
@@ -2385,6 +2436,7 @@ class _EigenmodeReceiverBuilder(GridUserObject):
         receiver.dft_start = dft_start
         receiver.dft_stop = dft_stop
         receiver.dft_points = dft_points
+        receiver.match_depth_cells = match_depth_cells
         grid.eigenmodereceivers.append(receiver)
         logger.info(
             f"{self.grid_name(grid)}Eigenmode receiver {port_id!r}, normal {normal}{direction}, "

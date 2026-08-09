@@ -179,6 +179,43 @@ def test_reusable_surface_rejects_eigenmode_injection_plane_outside():
         validate_ntff_source_enclosure(model, output_grid)
 
 
+def test_reusable_surface_checks_matched_boundary_instead_of_reference_plane():
+    closure = ResolvedKSIRClosure("closed", (), (), True, True)
+    surface = closure.apply_quadrature(
+        build_component_surface(
+            "Ez",
+            (5, 5, 5),
+            (15, 15, 15),
+            (0.01, 0.01, 0.01),
+            (25, 25, 25),
+        )
+    )
+    source = SimpleNamespace(
+        normal_axis=0,
+        transverse_axes=(1, 2),
+        transverse_start=np.asarray((8, 8)),
+        transverse_stop=np.asarray((12, 12)),
+        plane_index=10,
+        matched_boundary=SimpleNamespace(boundary_index=18),
+    )
+    main_grid = SimpleNamespace(
+        dl=np.asarray((0.01, 0.01, 0.01)),
+        eigenmodesources=[source],
+        discreteplanewaves=[],
+    )
+    monitor = SimpleNamespace(
+        name="field-transform",
+        allow_external_sources=False,
+        surfaces={"Ez": surface},
+        closure=closure,
+    )
+    model = SimpleNamespace(G=main_grid, subgrids=[])
+    output_grid = SimpleNamespace(ntff_monitors=[monitor])
+
+    with pytest.raises(ValueError, match="EigenmodePort"):
+        validate_ntff_source_enclosure(model, output_grid)
+
+
 def test_reusable_frequency_rejects_above_nyquist(tmp_path):
     scene = _base_scene()
     scene.add(gprMax.NTFFSurface(p1=SURFACE_LOWER, p2=SURFACE_UPPER, id="surface"))

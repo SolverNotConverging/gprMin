@@ -156,6 +156,7 @@ class FDTDGrid:
         self.eigenmodesources: List[EigenmodeSource] = []
         self.eigenmodereceivers: List[EigenmodeReceiver] = []
         self.eigenmodeports = []
+        self.eigenmodematches = []
         self.rxs: List[Rx] = []
         self.port_monitors = []  # Source-bound S-parameter/impedance outputs
         self.snapshots = []  # List[Snapshot]
@@ -860,6 +861,9 @@ class FDTDGrid:
         from gprMax.sources import initialise_eigenmode_ports
 
         initialise_eigenmode_ports(self)
+        from gprMax.matched_eigenmode_ports import initialise_eigenmode_matches
+
+        initialise_eigenmode_matches(self)
 
     def _build_materials(self) -> None:
         """Calculate properties of materials in the grid.

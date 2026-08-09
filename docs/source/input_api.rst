@@ -477,10 +477,11 @@ waveforms can drive local Hertzian or magnetic dipoles, voltage sources,
 transmission lines, and magnetic-frill sources. The discrete-plane-wave
 formulation currently requires a built-in analytic waveform.
 
-Eigenmode band, ports, and excitation
--------------------------------------
+Eigenmode band, ports, matching, and excitation
+------------------------------------------------
 .. autoclass:: gprMax.user_objects.cmds_multiuse.EigenmodeBand
 .. autoclass:: gprMax.user_objects.cmds_multiuse.EigenmodePort
+.. autoclass:: gprMax.user_objects.cmds_multiuse.EigenmodeMatch
 .. autoclass:: gprMax.user_objects.cmds_multiuse.EigenmodeExcitation
 
 An eigenmode model has one shared frequency band, one or more independently
@@ -512,6 +513,24 @@ range or waveform:
         port=1, mode=1, waveform='auto', plot_waveform=True,
     ))
 
+Matching is optional. To replace the outward termination associated with
+port 1 by the paper-based matched modal boundary, add:
+
+.. code-block:: python
+
+    scene.add(gprMax.EigenmodeMatch(port=1, depth_cells=2))
+
+Here the port reference plane must be exactly two longitudinal cells from its
+outward domain face: the low-coordinate face for a ``direction='+'`` port or
+the high-coordinate face for ``direction='-'``. That face must have zero PML
+thickness and no symmetry boundary. The matched prism must not intersect a
+transverse PML slab, extend into the opposite longitudinal PML, contain a
+special update stencil such as ``ThinWire``, or overlap another matched
+aperture. The reference plane must be strictly inside the domain.
+``EigenmodeMatch`` does not move the port or construct the intervening buffer.
+The port aperture must span the complete intended waveguide opening; face
+nodes outside it retain the ordinary hard-boundary value.
+
 ``modes`` is a strictly increasing tuple of one-based modes. A scalar value
 ``N`` is shorthand for modes 1 through ``N``. All ports using ``'auto'``
 receive one common anchor list covering both the shared DFT band and the
@@ -530,6 +549,22 @@ declared band, with a recommendation to use ``waveform='auto'``.
 figure. ``True`` writes it, ``False`` suppresses it, and the default ``None``
 writes it only for geometry-only runs. Each port's ``plot_fields`` setting
 continues to control only that port's modal-field figures.
+
+The matched buffer must be longitudinally uniform and use one homogeneous,
+lossless, nondispersive fill. Matching is limited to the modes listed by that
+``EigenmodePort`` and requires effectively real, frequency-independent modal
+profiles whose dispersion is described by one real scalar cutoff. On an
+active port the usual TF/SF source is replaced by the matched-source Eq. (19)
+of [ALI2000]_: the source launches the selected mode while the boundary
+absorbs backward components of every listed supported mode. The causal
+full-history FIR uses a compiled circular-buffer Cython kernel, but still has
+quadratic total work in the number of time steps per matched mode. See
+:doc:`eigenmode_port` for placement, validation, and output metadata.
+Conventional microstrip and other inhomogeneous, lossy, dispersive,
+complex-profile, or frequency-dependent port sections are not supported by
+``EigenmodeMatch``. Use the ordinary ``EigenmodePort`` for those cases,
+continue a longitudinally uniform feed into PML, and verify the termination by
+varying the feed length and PML settings.
 
 Severe tracking mismatch between explicit multiple anchors is an error that
 recommends one explicit anchor. With automatic anchors, a failure confined to

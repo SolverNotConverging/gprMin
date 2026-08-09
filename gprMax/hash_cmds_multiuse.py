@@ -31,6 +31,7 @@ from .user_objects.cmds_multiuse import (
     DiscretePlaneWaveVector,
     EigenmodeBand,
     EigenmodeExcitation,
+    EigenmodeMatch,
     EigenmodePort,
     ExcitationFile,
     HertzianDipole,
@@ -257,6 +258,7 @@ def process_multicmds(multicmds):
 
     eigenmode_band_cmds = multicmds.get('#eigenmode_band') or []
     eigenmode_port_cmds = multicmds.get('#eigenmode_port') or []
+    eigenmode_match_cmds = multicmds.get('#eigenmode_match') or []
     eigenmode_excitation_cmds = multicmds.get('#eigenmode_excitation') or []
     if eigenmode_port_cmds and len(eigenmode_band_cmds) != 1:
         raise ValueError(
@@ -319,6 +321,17 @@ def process_multicmds(multicmds):
                 modes=modes,
                 anchors=anchors,
                 plot_fields=plot_fields,
+            )
+        )
+
+    for cmdinstance in eigenmode_match_cmds:
+        tmp = cmdinstance.split()
+        if len(tmp) != 2:
+            raise ValueError('#eigenmode_match requires port depth_cells.')
+        scene_objects.append(
+            EigenmodeMatch(
+                port=int(tmp[0]),
+                depth_cells=int(tmp[1]),
             )
         )
 

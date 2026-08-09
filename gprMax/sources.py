@@ -358,6 +358,8 @@ class EigenmodeSource(Source):
         self.dft_stop = None
         self.dft_points = None
         self.port_monitor = None
+        self.match_depth_cells = None
+        self.matched_boundary = None
 
     def grid_init(self, G):
         """Prepare source data that depends on the final built Yee grid."""
@@ -1466,6 +1468,8 @@ class EigenmodeSource(Source):
 
     def update_eigenmode_magnetic(self, iteration, G):
         """Apply magnetic-field TF/SF corrections using incident modal E."""
+        if self.matched_boundary is not None:
+            return
         time = iteration * G.dt
         if not self._source_is_active(time):
             return
@@ -1495,6 +1499,8 @@ class EigenmodeSource(Source):
 
     def update_eigenmode_electric(self, iteration, G):
         """Apply electric-field TF/SF corrections using incident modal H."""
+        if self.matched_boundary is not None:
+            return
         if self.broadband_h_envelopes is not None:
             time = iteration * G.dt
             if self._source_is_active(time):

@@ -401,6 +401,8 @@ The frequency dataset and validity mask can be plotted directly:
     plt.xlabel('Frequency [Hz]')
     plt.ylabel(r'$|S_{11}|$ [dB]')
 
+.. _output-eigenmode-port:
+
 Eigenmode-port and S-parameter output
 -------------------------------------
 
@@ -411,6 +413,25 @@ rows ordered by the one-based ``ModeIndices`` attribute. ``S`` is the outgoing
 coefficient divided by the excited source-mode incident coefficient, so the
 source group contains modal S11 and other groups contain S21, S31, and modal
 conversion terms.
+
+Every eigenmode port group has a Boolean ``Matched`` attribute. It is false
+for an ordinary monitor/TF-SF source. When ``#eigenmode_match`` or
+``EigenmodeMatch`` is attached, it is true and the group also contains:
+
+* ``MatchDepthCells`` -- the requested number of longitudinal cells between
+  the modal reference plane and outward domain face;
+* ``MatchedBoundaryIndex`` -- the normal Yee-plane index of that outward
+  boundary; and
+* ``MatchedFormulation`` --
+  ``Alimenti2000NumericalModalTranslation``, identifying the numerical
+  translation operator based on [ALI2000]_.
+
+The existing ``PlaneIndex`` attribute remains the interior expansion/reference
+plane index, while ``ModeIndices`` gives the modes included in the match. Only
+those modes are absorbed. The causal impulse responses and runtime FIR
+histories are not written to the output file. The ``frequency``, ``incident``,
+``outgoing``, ``S``, and validity datasets retain their ordinary meanings for
+matched ports.
 
 The complex ``electric_cross_power_matrix`` and Hermitian ``power_matrix``
 both have shape

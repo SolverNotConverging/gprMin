@@ -176,6 +176,11 @@ class CPUUpdates(Updates[GridType]):
         for source in self.grid.eigenmodesources:
             source.update_eigenmode_electric(iteration, self.grid)
 
+    def update_eigenmode_matches_electric(self, iteration):
+        """Impose matched modal electric boundaries for the next H update."""
+        for match in self.grid.eigenmodematches:
+            match.update_electric_boundary(iteration + 1, self.grid)
+
      
 
     def update_plane_waves_magnetic(self, iteration):

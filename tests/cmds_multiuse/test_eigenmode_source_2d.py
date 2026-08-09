@@ -42,6 +42,40 @@ def _scene(mode):
     return scene
 
 
+def _matched_scene(mode):
+    scene = _scene(mode)
+    scene.add(gprMax.EigenmodeMatch(port=1, depth_cells=15))
+    return scene
+
+
+def _matched_reflection_scene(matched):
+    scene = gprMax.Scene()
+    scene.add(gprMax.DomainMode(mode="TM"))
+    scene.add(gprMax.Discretisation(p1=(1e-3, 1e-3, 1e-3)))
+    scene.add(gprMax.Domain(p1=(0.06, 0.05, INF)))
+    scene.add(gprMax.PMLThickness(thickness=0))
+    scene.add(gprMax.TimeWindow(time=2e-9))
+    scene.add(gprMax.Waveform(wave_type="ricker", amp=1, freq=5e9, id="pulse"))
+    scene.add(gprMax.Box(p1=(0, 0, 0), p2=(0.06, 0.005, INF), material_id="pec"))
+    scene.add(gprMax.Box(p1=(0, 0.045, 0), p2=(0.06, 0.05, INF), material_id="pec"))
+    scene.add(gprMax.EigenmodeBand(id="band", fmin=5e9, fmax=5e9, points=1))
+    scene.add(
+        gprMax.EigenmodePort(
+            port=1,
+            p1=(0.015, 0.005, 0),
+            p2=(0.015, 0.045, INF),
+            direction="+",
+            modes=(1,),
+            anchors=(5e9,),
+        )
+    )
+    if matched:
+        scene.add(gprMax.EigenmodeMatch(port=1, depth_cells=15))
+    scene.add(gprMax.EigenmodeExcitation(port=1, mode=1, waveform="pulse"))
+    scene.add(gprMax.Rx(p1=(0.025, 0.025, INF)))
+    return scene
+
+
 def _user_waveform_broadband_scene(direction):
     scene = gprMax.Scene()
     scene.add(gprMax.DomainMode(mode="TM"))
@@ -184,6 +218,68 @@ def test_2d_eigenmode_injection_updates_only_live_system(
             assert np.max(np.abs(receiver[component][...])) > 0
         for component in dead_components:
             assert np.max(np.abs(receiver[component][...])) == 0
+
+
+@pytest.mark.parametrize(
+    ("mode", "live_component"),
+    [("TM", "Ez"), ("TE", "Ey")],
+)
+def test_2d_matched_eigenmode_source_runs_and_records_boundary_metadata(
+    tmp_path,
+    mode,
+    live_component,
+):
+    output = tmp_path / f"matched_eigenmode_{mode.lower()}"
+    gprMax.run(
+        scenes=[_matched_scene(mode)],
+        n=1,
+        outputfile=output,
+        hide_progress_bars=True,
+    )
+
+    with h5py.File(output.with_suffix(".h5"), "r") as handle:
+        assert np.max(np.abs(handle[f"rxs/rx1/{live_component}"][...])) > 0
+        port = handle["eigenmode_ports/port1"]
+        assert bool(port.attrs["Matched"])
+        assert port.attrs["MatchDepthCells"] == 15
+        assert port.attrs["MatchedBoundaryIndex"] == 0
+        assert port.attrs["PlaneIndex"] == 15
+        assert (
+            port.attrs["MatchedFormulation"]
+            == "Alimenti2000NumericalModalTranslation"
+        )
+
+
+def test_matched_eigenmode_boundary_absorbs_returning_mode(tmp_path):
+    outputs = {}
+    for matched in (False, True):
+        output = tmp_path / ("matched" if matched else "unmatched")
+        gprMax.run(
+            scenes=[_matched_reflection_scene(matched)],
+            n=1,
+            outputfile=output,
+            hide_progress_bars=True,
+        )
+        with h5py.File(output.with_suffix(".h5"), "r") as handle:
+            outputs[matched] = handle["rxs/rx1/Ez"][...]
+
+    late_start = 3 * outputs[False].size // 4
+    unmatched_late_rms = np.sqrt(np.mean(outputs[False][late_start:] ** 2))
+    matched_late_rms = np.sqrt(np.mean(outputs[True][late_start:] ** 2))
+    assert matched_late_rms < 0.25 * unmatched_late_rms
+
+
+def test_matched_port_accepts_fixed_real_multiple_anchor_basis(tmp_path):
+    scene = _user_waveform_broadband_scene("+")
+    scene.add(gprMax.EigenmodeMatch(port=1, depth_cells=15))
+
+    gprMax.run(
+        scenes=[scene],
+        n=1,
+        geometry_only=True,
+        outputfile=tmp_path / "matched_multiple_anchors",
+        hide_progress_bars=True,
+    )
 
 
 def test_2d_dielectric_mode_decays_before_source_boundary(tmp_path):
@@ -400,7 +496,13 @@ def test_real_solver_negative_broadband_power_and_user_waveform(tmp_path, monkey
 
 @pytest.mark.parametrize("mode", ["TM", "TE"])
 @pytest.mark.parametrize("invariant_axis", [0, 1, 2])
-def test_2d_eigenmode_builds_for_every_invariant_axis(tmp_path, mode, invariant_axis):
+@pytest.mark.parametrize("direction", ["+", "-"])
+def test_2d_matched_eigenmode_builds_for_every_invariant_axis_and_direction(
+    tmp_path,
+    mode,
+    invariant_axis,
+    direction,
+):
     letters = "xyz"
     normal_axis = (invariant_axis + 1) % 3
     transverse_axis = (invariant_axis + 2) % 3
@@ -433,7 +535,8 @@ def test_2d_eigenmode_builds_for_every_invariant_axis(tmp_path, mode, invariant_
 
     full_lower = [0, 0, 0]
     full_upper = [0, 0, 0]
-    full_lower[normal_axis] = full_upper[normal_axis] = 0.01
+    port_coordinate = 0.01 if direction == "+" else 0.03
+    full_lower[normal_axis] = full_upper[normal_axis] = port_coordinate
     full_lower[transverse_axis] = 0.005
     full_upper[transverse_axis] = 0.035
     full_lower[invariant_axis] = 0
@@ -444,18 +547,19 @@ def test_2d_eigenmode_builds_for_every_invariant_axis(tmp_path, mode, invariant_
             port=1,
             p1=tuple(full_lower),
             p2=tuple(full_upper),
-            direction="+",
+            direction=direction,
             modes=(1,),
             anchors=(10e9,),
         )
     )
+    scene.add(gprMax.EigenmodeMatch(port=1, depth_cells=10))
     scene.add(gprMax.EigenmodeExcitation(port=1, mode=1, waveform="w"))
 
     gprMax.run(
         scenes=[scene],
         n=1,
         geometry_only=True,
-        outputfile=tmp_path / f"{mode}_{letters[invariant_axis]}",
+        outputfile=tmp_path / f"{mode}_{letters[invariant_axis]}_{direction}",
         hide_progress_bars=True,
     )
 

@@ -10,6 +10,7 @@ from gprMax.hash_cmds_multiuse import process_multicmds
 from gprMax.user_objects.cmds_multiuse import (
     EigenmodeBand,
     EigenmodeExcitation,
+    EigenmodeMatch,
     EigenmodePort,
 )
 
@@ -120,6 +121,105 @@ def test_hash_commands_parse_global_band_per_port_anchors_and_excitation(monkeyp
         'waveform': 'auto',
         'plot_waveform': False,
     }
+
+
+def test_hash_commands_parse_eigenmode_matches():
+    commands = defaultdict(lambda: None)
+    commands['#eigenmode_band'] = ['wg 4e9 6e9 21']
+    commands['#eigenmode_port'] = [
+        '1 0.01 0.005 0 0.01 0.035 inf + 1 auto',
+        '2 0.09 0.005 0 0.09 0.035 inf - 1 auto',
+    ]
+    commands['#eigenmode_match'] = ['1 4', '2 1']
+    commands['#eigenmode_excitation'] = ['1 1 auto']
+
+    objects = process_multicmds(commands)
+
+    matches = [obj for obj in objects if isinstance(obj, EigenmodeMatch)]
+    assert [match.kwargs for match in matches] == [
+        {'port': 1, 'depth_cells': 4},
+        {'port': 2, 'depth_cells': 1},
+    ]
+
+
+@pytest.mark.parametrize('command', ['', '1', '1 4 extra'])
+def test_hash_eigenmode_match_rejects_bad_arity(command):
+    commands = defaultdict(lambda: None)
+    commands['#eigenmode_band'] = ['wg 4e9 6e9 21']
+    commands['#eigenmode_port'] = ['1 0.01 0.005 0 0.01 0.035 inf + 1 auto']
+    commands['#eigenmode_match'] = [command]
+    commands['#eigenmode_excitation'] = ['1 1 auto']
+
+    with pytest.raises(ValueError, match='#eigenmode_match requires port depth_cells'):
+        process_multicmds(commands)
+
+
+@pytest.mark.parametrize('command', ['one 4', '1 1.5', '1 four'])
+def test_hash_eigenmode_match_rejects_non_integer_tokens(command):
+    commands = defaultdict(lambda: None)
+    commands['#eigenmode_band'] = ['wg 4e9 6e9 21']
+    commands['#eigenmode_port'] = ['1 0.01 0.005 0 0.01 0.035 inf + 1 auto']
+    commands['#eigenmode_match'] = [command]
+    commands['#eigenmode_excitation'] = ['1 1 auto']
+
+    with pytest.raises(ValueError):
+        process_multicmds(commands)
+
+
+@pytest.mark.parametrize('depth_cells', [0, -1])
+def test_eigenmode_match_rejects_depth_below_one(monkeypatch, depth_cells):
+    grid = _configure_grid(monkeypatch)
+    _build_definitions(grid)
+
+    with pytest.raises(ValueError, match='depth_cells must be one or greater'):
+        EigenmodeMatch(port=1, depth_cells=depth_cells).build(grid)
+
+
+@pytest.mark.parametrize('depth_cells', [True, 1.5, '4'])
+def test_eigenmode_match_api_rejects_non_integer_depth(monkeypatch, depth_cells):
+    grid = _configure_grid(monkeypatch)
+    _build_definitions(grid)
+
+    with pytest.raises(ValueError, match='depth_cells must be an integer'):
+        EigenmodeMatch(port=1, depth_cells=depth_cells).build(grid)
+
+
+def test_eigenmode_match_rejects_unknown_and_duplicate_ports(monkeypatch):
+    grid = _configure_grid(monkeypatch)
+    _build_definitions(grid)
+
+    with pytest.raises(ValueError, match='unknown eigenmode port 3'):
+        EigenmodeMatch(port=3, depth_cells=4).build(grid)
+
+    EigenmodeMatch(port=1, depth_cells=4).build(grid)
+    with pytest.raises(ValueError, match='Eigenmode port 1 already has an EigenmodeMatch'):
+        EigenmodeMatch(port=1, depth_cells=5).build(grid)
+
+
+def test_eigenmode_match_targets_source_and_passive_runtime_ports(monkeypatch):
+    grid = _configure_grid(monkeypatch)
+    _build_definitions(grid)
+    EigenmodeMatch(port=1, depth_cells=1).build(grid)
+    EigenmodeMatch(port=2, depth_cells=4).build(grid)
+
+    EigenmodeExcitation(port=1, mode=1, waveform='auto').build(grid)
+
+    source = grid.eigenmodesources[0]
+    receiver = grid.eigenmodereceivers[0]
+    assert source.port_index == 1
+    assert source.match_depth_cells == 1
+    assert receiver.port_index == 2
+    assert receiver.match_depth_cells == 4
+
+
+def test_eigenmode_ports_remain_unmatched_without_modifier(monkeypatch):
+    grid = _configure_grid(monkeypatch)
+    _build_definitions(grid)
+
+    EigenmodeExcitation(port=1, mode=1, waveform='auto').build(grid)
+
+    assert grid.eigenmodesources[0].match_depth_cells is None
+    assert grid.eigenmodereceivers[0].match_depth_cells is None
 
 
 def test_hash_excitation_plot_control_does_not_require_waveform_argument():

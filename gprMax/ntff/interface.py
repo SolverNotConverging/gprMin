@@ -707,8 +707,14 @@ def validate_ntff_source_enclosure(model, grid) -> None:
                 transverse_axes = np.asarray(source.transverse_axes, dtype=np.intp)
                 local_lower = np.zeros(3, dtype=np.float64)
                 local_upper = np.zeros(3, dtype=np.float64)
-                local_lower[source.normal_axis] = source.plane_index
-                local_upper[source.normal_axis] = source.plane_index
+                matched_boundary = getattr(source, "matched_boundary", None)
+                injection_plane_index = (
+                    source.plane_index
+                    if matched_boundary is None
+                    else matched_boundary.boundary_index
+                )
+                local_lower[source.normal_axis] = injection_plane_index
+                local_upper[source.normal_axis] = injection_plane_index
                 local_lower[transverse_axes] = source.transverse_start
                 local_upper[transverse_axes] = source.transverse_stop
                 if source_grid is model.G:

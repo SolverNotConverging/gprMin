@@ -479,6 +479,12 @@ class EigenmodePortMonitor:
         group.attrs["Normal"] = self.owner.normal
         group.attrs["ModeIndices"] = self.mode_indices
         group.attrs["PlaneIndex"] = self.owner.plane_index
+        matched_boundary = getattr(self.owner, "matched_boundary", None)
+        group.attrs["Matched"] = matched_boundary is not None
+        if matched_boundary is not None:
+            group.attrs["MatchDepthCells"] = matched_boundary.depth_cells
+            group.attrs["MatchedBoundaryIndex"] = matched_boundary.boundary_index
+            group.attrs["MatchedFormulation"] = matched_boundary.formulation
         group.attrs["PhaseReanchorInterval"] = DFT_PHASE_REANCHOR_INTERVAL
         group.attrs["RequestedAnchorPolicy"] = self.owner.requested_anchor_policy
         group.attrs["ResolvedAnchorPolicy"] = self.owner.resolved_anchor_policy

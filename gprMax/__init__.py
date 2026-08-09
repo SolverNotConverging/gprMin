@@ -45,6 +45,7 @@ from .user_objects.cmds_multiuse import (
     DiscretePlaneWaveVector,
     EigenmodeBand,
     EigenmodeExcitation,
+    EigenmodeMatch,
     EigenmodePort,
     ExcitationFile,
     HertzianDipole,

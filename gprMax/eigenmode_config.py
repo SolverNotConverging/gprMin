@@ -307,6 +307,13 @@ class EigenmodeBandSpec:
                 'bandpass excitation.'
             )
 
+
+@dataclass
+class EigenmodeMatchSpec:
+    port: int
+    depth_cells: int
+
+
 @dataclass
 class EigenmodePortSpec:
     port: int
@@ -320,7 +327,12 @@ class EigenmodePortSpec:
     modes: tuple[int, ...]
     anchors: str | tuple[float, ...]
     plot_fields: bool | None
+    match: EigenmodeMatchSpec | None = None
     resolved_anchors: tuple[float, ...] = field(default_factory=tuple)
+
+    @property
+    def match_depth_cells(self) -> int | None:
+        return None if self.match is None else self.match.depth_cells
 
     @property
     def anchor_policy(self) -> str:

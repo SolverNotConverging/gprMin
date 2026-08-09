@@ -1435,6 +1435,94 @@ trims that tail for every automatic port and uses the nearest retained modal
 profile for endpoint extrapolation. A failure in the requested band makes
 every automatic port warn and use one shared band-centre anchor.
 
+#eigenmode_match:
+-----------------
+
+Attaches the modal absorbing and matched-source boundary of [ALI2000]_ to an
+existing ``#eigenmode_port``. The port remains the interior modal reference
+(expansion) plane; the matched boundary is the outward model-domain face. The
+syntax is:
+
+.. code-block:: none
+
+    #eigenmode_match: port_number depth_cells
+
+* ``port_number`` is the one-based number of a port defined by
+  ``#eigenmode_port``. A port can have at most one match.
+* ``depth_cells`` is a positive integer giving the exact number of ordinary
+  longitudinal Yee cells from that port plane to its outward domain face.
+  For a ``+`` port the outward face is the low-coordinate face (``x0``,
+  ``y0``, or ``z0``); for a ``-`` port it is the corresponding ``xmax``,
+  ``ymax``, or ``zmax`` face.
+
+For example, with :math:`\Delta x=1` mm, a ``+x`` port at :math:`x=4` mm is
+four cells from ``x0``:
+
+.. code-block:: none
+
+    #pml_cells: 0 0 0 10 0 0
+    #eigenmode_port: 1 0.004 0.001 0.001 0.004 0.007 0.005 + 1 55e9
+    #eigenmode_match: 1 4
+
+The command does not create a lossy volume or change the intervening
+geometry. Those ``depth_cells`` must already form a longitudinally uniform
+guide buffer. The matched algorithm samples the total transverse electric
+field at the port plane and causally translates the listed modal components
+to the outward face. Only modes in the port's ``modes`` list are absorbed;
+unlisted modal or radiation content is not matched and can reflect. The port
+aperture must span the complete waveguide opening intended to be matched;
+outward-face nodes outside it retain the ordinary hard-boundary value.
+
+If this is the port selected by ``#eigenmode_excitation``, the ordinary
+interior TF/SF injection is replaced by the matched-source form of Eq. (19)
+in [ALI2000]_. For excitation mode :math:`m`, gprMax imposes the known source
+term :math:`s(t)-\mathcal{P}_{m,2d}s(t)` while translating the measured modal
+field through :math:`\mathcal{P}_{n,d}`. The result launches the requested
+incident mode and absorbs backward waves in every listed supported mode. A
+matched passive port applies only the modal absorbing term.
+
+.. warning::
+
+    This initial implementation intentionally follows the paper's scalar,
+    fixed-profile formulation. The complete buffer aperture must contain one
+    finite, positive, homogeneous, lossless, nondispersive material, and its
+    Yee material and constraint pattern must be identical on every
+    longitudinal plane. Special update stencils such as ``#thin_wire`` are
+    unsupported inside the buffer. Each requested modal electric profile must
+    be effectively real after one phase rotation and effectively invariant
+    over its anchors. Its propagation constants must also be representable by
+    one real, non-negative, frequency-independent cutoff wavenumber. General
+    lossy, dispersive, complex-profile, or frequency-dependent modes are not
+    supported by this boundary. A conventional microstrip air/substrate
+    aperture is therefore unsupported. In those cases, omit
+    ``#eigenmode_match``, keep the ordinary ``#eigenmode_port``, and continue
+    a uniform feed into a sufficiently thick or tuned longitudinal PML.
+    Validate the residual termination reflection by varying the feed length
+    and PML settings.
+
+.. note::
+
+    * The outward face must have zero PML cells and cannot also be a symmetry
+      face. Use the six-value form of ``#pml_cells`` to control the required
+      faces independently. The matched aperture and its longitudinal buffer
+      must remain inside every transverse PML interface, and the reference
+      plane must not extend into the opposite longitudinal PML.
+    * The port coordinate must be exactly ``depth_cells`` grid cells from the
+      outward face and strictly inside the domain; ``depth_cells`` does not
+      move the port or round its coordinate.
+    * The reference implementation retains the causal impulse response for
+      the complete time window. Its online FIR uses a compiled Cython
+      circular-history kernel, but the total work remains quadratic in the
+      number of time steps (per matched mode), so it is intended first for
+      validation and compact models.
+    * ``#eigenmode_match`` supports the main grid and CPU solver only and
+      cannot be used with MPI.
+    * Matched apertures cannot overlap, including at shared Yee edges on
+      adjacent domain faces.
+
+See :ref:`eigenmode-match` for the full algorithm and validation workflow and
+:ref:`output-eigenmode-port` for the HDF5 metadata.
+
 #eigenmode_excitation:
 ----------------------
 

@@ -112,6 +112,9 @@ class Solver:
                          
             self.updates.update_electric_b()
 
+            if isinstance(self.updates, CPUUpdates):
+                self.updates.update_eigenmode_matches_electric(iteration)
+
             if isinstance(self.updates, MPIUpdates):
                 self.updates.halo_swap_electric()
             if isinstance(self.updates, CUDAUpdates):

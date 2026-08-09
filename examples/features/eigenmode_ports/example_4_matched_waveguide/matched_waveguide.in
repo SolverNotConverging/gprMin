@@ -1,0 +1,39 @@
+#title: Example 4 - PML-free matched parallel-plate waveguide
+
+#domain_mode: TM
+#domain: 0.120 0.030 inf
+#dx_dy_dz: 0.001 0.001 0.001
+#time_window: 5e-9
+
+## This example deliberately has no PML. The two longitudinal faces are
+## terminated by matched eigenmode boundaries, while the transverse faces are
+## closed by the PEC plates below.
+#pml_cells: 0
+
+## A uniform 20 mm air-filled parallel-plate guide. There is intentionally no
+## discontinuity. Only listed modes are absorbed: add other supported modes,
+## or use an ordinary port with PML where unsupported/radiated field must leave.
+#box: 0 0 0 0.120 0.005 inf pec
+#box: 0 0.025 0 0.120 0.030 inf pec
+
+## The significant automatic source spectrum lies between the first and
+## second 2D-TM cutoffs. Each port is 10 cells from its outward domain face,
+## and its aperture spans the complete guide opening.
+#eigenmode_band: matched_band 10e9 11.5e9 21
+#eigenmode_port: 1 0.010 0.005 0 0.010 0.025 inf + 1 auto
+#eigenmode_port: 2 0.110 0.005 0 0.110 0.025 inf - 1 auto
+#eigenmode_match: 1 10
+#eigenmode_match: 2 10
+#eigenmode_excitation: 1 1 auto
+
+## The common colour scale in plot_results.py makes the late quiet frames a
+## direct visual check that xmax launches no visible return after the guided
+## pulse crosses its passive matched port.
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 0.80e-9 matched_waveguide_0800ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 1.20e-9 matched_waveguide_1200ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 1.60e-9 matched_waveguide_1600ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 2.00e-9 matched_waveguide_2000ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 2.40e-9 matched_waveguide_2400ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 2.80e-9 matched_waveguide_2800ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 3.50e-9 matched_waveguide_3500ps.h5
+#snapshot: 0 0 0 0.120 0.030 inf 0.001 0.001 0.001 4.50e-9 matched_waveguide_4500ps.h5

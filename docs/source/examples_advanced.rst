@@ -7,10 +7,11 @@ This section provides example models of some of the more advanced features of gp
 Eigenmode ports
 ===============
 
-The three numbered examples under ``examples/features/eigenmode_ports`` cover
-a straight waveguide, a curved waveguide, and an eigenmode-fed pyramidal horn.
+The four numbered examples under ``examples/features/eigenmode_ports`` cover
+a straight waveguide, a curved waveguide, an eigenmode-fed pyramidal horn, and
+a PML-free guide terminated by two matched modal boundaries.
 :doc:`eigenmode_port` provides a step-by-step tutorial for users who primarily
-want S-parameters and far fields.
+want S-parameters, transient fields, and far fields.
 
 Always inspect the solved mode before committing to a long FDTD run:
 
