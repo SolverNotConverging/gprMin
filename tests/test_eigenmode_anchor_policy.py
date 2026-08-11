@@ -5,6 +5,12 @@ import pytest
 
 import gprMax.config as config
 import gprMax.sources as sources_module
+from gprMax.eigenmode_policy import (
+    AnchorFallbackReason,
+    AnchorTrackingOutcome,
+    GuardTrimSide,
+    ModeResolutionState,
+)
 from gprMax.sources import EigenmodeSource
 
 FREQUENCIES = (32e9, 45e9, 55e9, 65e9, 78e9)
@@ -100,6 +106,11 @@ def test_tracked_nonpropagating_guard_is_excluded_per_mode(monkeypatch):
         "auto_broadband_nonpropagating_trimmed",
         "auto_broadband",
     )
+    resolution = source.port_mode_anchor_resolutions[0]
+    assert resolution.tracking is AnchorTrackingOutcome.BROADBAND
+    assert resolution.source_power_indices == (1, 2, 3, 4)
+    assert resolution.monitor_reference_indices == (0, 1, 2, 3, 4)
+    assert resolution.nonpropagating_indices == (0,)
     assert any("mode 1" in warning and "non-propagating anchor" in warning for warning in warnings)
 
 
@@ -125,6 +136,14 @@ def test_in_band_tracking_failure_falls_back_only_the_affected_mode(monkeypatch)
     assert valid[:, 0].tolist() == [True, True, True, True, True]
     assert valid[:, 1].tolist() == [False, False, True, False, False]
     assert policies == ("auto_broadband", "auto_single_fallback")
+    resolution = source.port_mode_anchor_resolutions[1]
+    assert resolution.tracking is AnchorTrackingOutcome.SINGLE_FALLBACK
+    assert resolution.fallback_reason is AnchorFallbackReason.TRACKING_MISMATCH
+    assert resolution.trace.states[-3:] == (
+        ModeResolutionState.SINGLE_FALLBACK,
+        ModeResolutionState.CLASSIFYING_POWER,
+        ModeResolutionState.RESOLVED,
+    )
     assert any(
         "mode 2" in warning and "only the centre-frequency anchor" in warning
         for warning in warnings
@@ -173,6 +192,9 @@ def test_guard_tracking_failure_is_trimmed_before_centre_fallback(monkeypatch):
     assert valid[:, 0].tolist() == [True, True, True, True, True]
     assert valid[:, 1].tolist() == [False, True, True, True, True]
     assert policies == ("auto_broadband", "auto_broadband_guard_trimmed")
+    resolution = source.port_mode_anchor_resolutions[1]
+    assert resolution.tracking is AnchorTrackingOutcome.GUARD_TRIMMED
+    assert resolution.guard_trim_side is GuardTrimSide.LOWER
     assert any("mode 2" in warning and "lower spectral guard" in warning for warning in warnings)
     assert not any("only the centre-frequency anchor" in warning for warning in warnings)
 
@@ -198,6 +220,8 @@ def test_disconnected_propagating_anchors_fall_back_only_for_auto(monkeypatch):
     assert valid[:, 0].tolist() == [False, False, True, False, False]
     assert valid[:, 1].tolist() == [True, True, True, True, True]
     assert policies == ("auto_single_fallback", "auto_broadband")
+    resolution = automatic.port_mode_anchor_resolutions[0]
+    assert resolution.fallback_reason is AnchorFallbackReason.DISCONNECTED_PROPAGATION
 
     explicit = _source(monkeypatch, automatic=False)
     with pytest.raises(ValueError, match="disconnected propagating anchor ranges"):

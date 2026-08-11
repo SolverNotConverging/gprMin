@@ -6,6 +6,11 @@ import pytest
 
 import gprMax.config as config
 import gprMax.ports as ports_module
+from gprMax.eigenmode_policy import (
+    ModalBasisKind,
+    ModalNormalizationKind,
+    ModalReferenceKind,
+)
 from gprMax.eigenmode_ports import (
     DFT_PHASE_REANCHOR_INTERVAL,
     EigenmodePortMonitor,
@@ -362,6 +367,16 @@ def test_monitor_extrapolates_an_outer_propagating_endpoint(monkeypatch):
     monitor.prepare(grid)
 
     assert monitor.power_wave_valid[:, 0].tolist() == [False, True, True]
+    assert monitor.basis_plan.basis_kind[:, 0].tolist() == [
+        int(ModalBasisKind.GENERALIZED),
+        int(ModalBasisKind.POWER_WAVE),
+        int(ModalBasisKind.POWER_WAVE),
+    ]
+    assert monitor.basis_plan.reference_kind[:, 0].tolist() == [
+        int(ModalReferenceKind.EVANESCENT_RUN),
+        int(ModalReferenceKind.PROPAGATING_BANK),
+        int(ModalReferenceKind.PROPAGATING_BANK),
+    ]
     assert monitor.neff[:, 0] == pytest.approx([-0.5j, 0.4, 0.4])
     np.testing.assert_allclose(
         monitor.hv[:, 0, 0, 0] / monitor.eu[:, 0, 0, 0],
@@ -419,6 +434,10 @@ def test_monitor_rejects_matching_zero_neff_cutoff_anchor(monkeypatch):
 
     assert monitor.mode_decomposition_valid[:, 0].tolist() == [False, True]
     assert monitor.mode_power_valid[:, 0].tolist() == [False, True]
+    assert monitor.basis_plan.normalization_kind[:, 0].tolist() == [
+        int(ModalNormalizationKind.UNIT_BALANCED_EH),
+        int(ModalNormalizationKind.UNIT_REAL_POWER),
+    ]
 
 
 def test_monitor_keeps_two_evanescent_reference_runs_separate(monkeypatch):
@@ -473,6 +492,14 @@ def test_monitor_keeps_two_evanescent_reference_runs_separate(monkeypatch):
     monitor.prepare(grid)
 
     assert monitor.power_wave_valid[:, 0].tolist() == [False, False, True, False, False]
+    assert monitor.basis_plan.reference_kind[:, 0].tolist() == [
+        int(ModalReferenceKind.EVANESCENT_RUN),
+        int(ModalReferenceKind.EVANESCENT_RUN),
+        int(ModalReferenceKind.PROPAGATING_BANK),
+        int(ModalReferenceKind.EVANESCENT_RUN),
+        int(ModalReferenceKind.EVANESCENT_RUN),
+    ]
+    assert monitor.basis_plan.reference_run_id[:, 0].tolist() == [0, 0, -1, 1, 1]
     assert monitor.neff[:, 0] == pytest.approx([-0.5j, -0.5j, 0.4, -0.3j, -0.3j])
     np.testing.assert_allclose(
         monitor.hv[:, 0, 0, 0] / monitor.eu[:, 0, 0, 0],
@@ -545,6 +572,10 @@ def test_monitor_uses_nearest_tracked_endpoint_outside_candidate_range(monkeypat
     monitor.prepare(grid)
 
     assert not np.any(monitor.power_wave_valid)
+    assert np.all(
+        monitor.basis_plan.reference_kind
+        == int(ModalReferenceKind.OUTER_ENDPOINT)
+    )
     np.testing.assert_allclose(
         monitor.neff,
         [[0.4, -0.5j], [-0.3j, 0.6]],

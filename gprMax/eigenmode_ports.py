@@ -17,6 +17,12 @@ from dataclasses import dataclass
 import numpy as np
 
 import gprMax.config as config
+from gprMax.eigenmode_policy import (
+    ModalBasisKind,
+    ModalBasisPlan,
+    ModalNormalizationKind,
+    ModalReferenceKind,
+)
 
 try:
     from gprMax.cython.eigenmode_dft import accumulate_eigenmode_dft
@@ -157,6 +163,7 @@ class EigenmodePortMonitor:
         anchor_mode_propagating=None,
         anchor_balanced_power=None,
         mode_anchor_policies=None,
+        mode_anchor_resolutions=None,
     ):
         self.owner = owner
         self.port_index = int(port_index)
@@ -201,9 +208,15 @@ class EigenmodePortMonitor:
             if mode_anchor_policies is None
             else tuple(str(value) for value in mode_anchor_policies)
         )
+        self.mode_anchor_resolutions = (
+            None
+            if mode_anchor_resolutions is None
+            else tuple(mode_anchor_resolutions)
+        )
         self.dft_start = float(dft_start)
         self.dft_stop = float(dft_stop)
         self.dft_points = int(dft_points)
+        self.basis_plan = None
         self.result = None
         self.s_parameters = None
         self.s_valid = None
@@ -272,6 +285,10 @@ class EigenmodePortMonitor:
             )
         if len(self.mode_anchor_policies) != len(self.mode_indices):
             raise ValueError("Eigenmode port requires one anchor policy per monitored mode.")
+        if self.mode_anchor_resolutions is not None and len(
+            self.mode_anchor_resolutions
+        ) != len(self.mode_indices):
+            raise ValueError("Eigenmode port requires one anchor resolution per monitored mode.")
         if np.any(~np.any(self.anchor_mode_valid, axis=0)):
             raise ValueError("Every eigenmode port mode requires at least one usable anchor.")
         for mode_position, mode_index in enumerate(self.mode_indices):
@@ -371,6 +388,147 @@ class EigenmodePortMonitor:
             supported &= np.abs(frequencies - anchor_frequency) > tolerance
         return supported
 
+    def _build_modal_basis_plan(self, frequencies):
+        """Resolve reference, interpolation, and normalization policy per bin."""
+
+        frequencies = np.asarray(frequencies, dtype=np.float64)
+        nf = frequencies.size
+        nm = len(self.mode_indices)
+        power_wave_eligible = np.column_stack(
+            tuple(
+                self._propagating_frequency_mask(frequencies, mode_position)
+                for mode_position in range(nm)
+            )
+        )
+        basis_kind = np.full((nf, nm), int(ModalBasisKind.GENERALIZED), dtype=np.uint8)
+        basis_kind[power_wave_eligible] = int(ModalBasisKind.POWER_WAVE)
+        reference_kind = np.full(
+            (nf, nm),
+            int(ModalReferenceKind.NONE),
+            dtype=np.uint8,
+        )
+        reference_kind[power_wave_eligible] = int(ModalReferenceKind.PROPAGATING_BANK)
+        normalization_kind = np.full(
+            (nf, nm),
+            int(ModalNormalizationKind.UNIT_BALANCED_EH),
+            dtype=np.uint8,
+        )
+        normalization_kind[power_wave_eligible] = int(
+            ModalNormalizationKind.UNIT_REAL_POWER
+        )
+        reference_run_id = np.full((nf, nm), -1, dtype=np.int32)
+        power_weights = np.zeros(
+            (nm, self.anchor_frequencies.size, nf),
+            dtype=np.float64,
+        )
+        reference_weights = np.zeros_like(power_weights)
+        reference_anchor_scale = np.zeros_like(
+            self.anchor_balanced_power,
+            dtype=np.float64,
+        )
+
+        for mode_position in range(nm):
+            usable_anchors = np.flatnonzero(self.anchor_mode_valid[:, mode_position])
+            power_weights[mode_position, usable_anchors] = self.owner._linear_anchor_weights(
+                frequencies,
+                self.anchor_frequencies[usable_anchors],
+            )
+            reference_anchors = np.flatnonzero(
+                self.anchor_mode_reference_valid[:, mode_position]
+            )
+            evanescent_reference_mask = (
+                self.anchor_mode_reference_valid[:, mode_position]
+                & ~self.anchor_mode_propagating[:, mode_position]
+            )
+            evanescent_runs = self._contiguous_true_runs(evanescent_reference_mask)
+            generalized_bins = np.flatnonzero(~power_wave_eligible[:, mode_position])
+            generalized_frequencies = frequencies[generalized_bins]
+
+            # Outside the solved candidate span, retain the nearest endpoint
+            # of the complete tracked reference bank.
+            below_candidate_range = generalized_frequencies < self.anchor_frequencies[0]
+            above_candidate_range = generalized_frequencies > self.anchor_frequencies[-1]
+            below_bins = generalized_bins[below_candidate_range]
+            above_bins = generalized_bins[above_candidate_range]
+            reference_weights[mode_position, reference_anchors[0], below_bins] = 1.0
+            reference_weights[mode_position, reference_anchors[-1], above_bins] = 1.0
+            reference_kind[below_bins, mode_position] = int(
+                ModalReferenceKind.OUTER_ENDPOINT
+            )
+            reference_kind[above_bins, mode_position] = int(
+                ModalReferenceKind.OUTER_ENDPOINT
+            )
+
+            within_candidate_bins = generalized_bins[
+                ~(below_candidate_range | above_candidate_range)
+            ]
+            if evanescent_runs and within_candidate_bins.size:
+                run_distances = np.empty(
+                    (len(evanescent_runs), within_candidate_bins.size),
+                    dtype=np.float64,
+                )
+                within_candidate_frequencies = frequencies[within_candidate_bins]
+                for run_position, (start, stop) in enumerate(evanescent_runs):
+                    low = self.anchor_frequencies[start]
+                    high = self.anchor_frequencies[stop]
+                    run_distances[run_position] = np.maximum(
+                        np.maximum(low - within_candidate_frequencies, 0.0),
+                        within_candidate_frequencies - high,
+                    )
+                selected_runs = np.argmin(run_distances, axis=0)
+                for run_position, (start, stop) in enumerate(evanescent_runs):
+                    bins = within_candidate_bins[selected_runs == run_position]
+                    if bins.size == 0:
+                        continue
+                    run_anchors = np.arange(start, stop + 1)
+                    reference_weights[mode_position][np.ix_(run_anchors, bins)] = (
+                        self.owner._linear_anchor_weights(
+                            frequencies[bins],
+                            self.anchor_frequencies[run_anchors],
+                        )
+                    )
+                    reference_kind[bins, mode_position] = int(
+                        ModalReferenceKind.EVANESCENT_RUN
+                    )
+                    reference_run_id[bins, mode_position] = run_position
+            elif within_candidate_bins.size:
+                # Compatibility path for a bank containing only propagating
+                # references: retain its endpoint generalized basis.
+                reference_weights[mode_position][
+                    np.ix_(reference_anchors, within_candidate_bins)
+                ] = self.owner._linear_anchor_weights(
+                    frequencies[within_candidate_bins],
+                    self.anchor_frequencies[reference_anchors],
+                )
+                reference_kind[within_candidate_bins, mode_position] = int(
+                    ModalReferenceKind.LEGACY_REFERENCE
+                )
+            reference_anchor_scale[reference_anchors, mode_position] = 1.0 / np.sqrt(
+                self.anchor_balanced_power[reference_anchors, mode_position]
+            )
+
+        interpolation_weights = np.where(
+            power_wave_eligible.T[:, np.newaxis, :],
+            power_weights,
+            reference_weights,
+        )
+        profile_scales = reference_anchor_scale.T
+        decomposition_eligible = np.column_stack(
+            tuple(
+                self._nondegenerate_reference_mask(frequencies, mode_position)
+                for mode_position in range(nm)
+            )
+        )
+        return ModalBasisPlan(
+            basis_kind=basis_kind,
+            reference_kind=reference_kind,
+            normalization_kind=normalization_kind,
+            reference_run_id=reference_run_id,
+            interpolation_weights=interpolation_weights,
+            profile_scales=profile_scales,
+            decomposition_eligible=decomposition_eligible,
+        )
+
     def prepare(self, grid):
         self._validate()
         if self.port_id is None:
@@ -404,95 +562,8 @@ class EigenmodePortMonitor:
 
         nf = self.frequency.size
         nm = len(self.mode_indices)
-        self.power_wave_valid = np.column_stack(
-            tuple(
-                self._propagating_frequency_mask(
-                    nominal_frequency,
-                    mode_position,
-                )
-                for mode_position in range(nm)
-            )
-        )
-        power_weights = np.zeros(
-            (nm, self.anchor_frequencies.size, nf),
-            dtype=np.float64,
-        )
-        reference_weights = np.zeros_like(power_weights)
-        reference_anchor_scale = np.zeros_like(
-            self.anchor_balanced_power,
-            dtype=np.float64,
-        )
-        for mode_position in range(nm):
-            usable_anchors = np.flatnonzero(self.anchor_mode_valid[:, mode_position])
-            power_weights[mode_position, usable_anchors] = self.owner._linear_anchor_weights(
-                self.frequency.astype(np.float64),
-                self.anchor_frequencies[usable_anchors],
-            )
-            reference_anchors = np.flatnonzero(
-                self.anchor_mode_reference_valid[:, mode_position]
-            )
-            evanescent_reference_mask = (
-                self.anchor_mode_reference_valid[:, mode_position]
-                & ~self.anchor_mode_propagating[:, mode_position]
-            )
-            evanescent_runs = self._contiguous_true_runs(evanescent_reference_mask)
-            generalized_bins = np.flatnonzero(~self.power_wave_valid[:, mode_position])
-            generalized_frequencies = nominal_frequency[generalized_bins]
-            # Beyond the solved candidate span there is no in-band
-            # propagation classification to prefer an evanescent run. Retain
-            # the nearest endpoint of the complete tracked reference bank.
-            below_candidate_range = generalized_frequencies < self.anchor_frequencies[0]
-            above_candidate_range = generalized_frequencies > self.anchor_frequencies[-1]
-            reference_weights[
-                mode_position,
-                reference_anchors[0],
-                generalized_bins[below_candidate_range],
-            ] = 1.0
-            reference_weights[
-                mode_position,
-                reference_anchors[-1],
-                generalized_bins[above_candidate_range],
-            ] = 1.0
-            within_candidate_bins = generalized_bins[
-                ~(below_candidate_range | above_candidate_range)
-            ]
-            if evanescent_runs and within_candidate_bins.size:
-                run_distances = np.empty(
-                    (len(evanescent_runs), within_candidate_bins.size),
-                    dtype=np.float64,
-                )
-                within_candidate_frequencies = nominal_frequency[within_candidate_bins]
-                for run_position, (start, stop) in enumerate(evanescent_runs):
-                    low = self.anchor_frequencies[start]
-                    high = self.anchor_frequencies[stop]
-                    run_distances[run_position] = np.maximum(
-                        np.maximum(low - within_candidate_frequencies, 0.0),
-                        within_candidate_frequencies - high,
-                    )
-                selected_runs = np.argmin(run_distances, axis=0)
-                for run_position, (start, stop) in enumerate(evanescent_runs):
-                    bins = within_candidate_bins[selected_runs == run_position]
-                    if bins.size == 0:
-                        continue
-                    run_anchors = np.arange(start, stop + 1)
-                    reference_weights[mode_position][np.ix_(run_anchors, bins)] = (
-                        self.owner._linear_anchor_weights(
-                            nominal_frequency[bins],
-                            self.anchor_frequencies[run_anchors],
-                        )
-                    )
-            elif within_candidate_bins.size:
-                # Compatibility path for a bank containing only propagating
-                # references: retain its endpoint generalized basis.
-                reference_weights[mode_position][
-                    np.ix_(reference_anchors, within_candidate_bins)
-                ] = self.owner._linear_anchor_weights(
-                    nominal_frequency[within_candidate_bins],
-                    self.anchor_frequencies[reference_anchors],
-                )
-            reference_anchor_scale[reference_anchors, mode_position] = 1.0 / np.sqrt(
-                self.anchor_balanced_power[reference_anchors, mode_position]
-            )
+        self.basis_plan = self._build_modal_basis_plan(nominal_frequency)
+        self.power_wave_valid = self.basis_plan.power_wave_eligible
         nu, nv = self.owner._transverse_cell_shape()
         shape = (nf, nm, nu, nv)
         self.eu = np.empty(shape, dtype=complex_dtype)
@@ -504,15 +575,7 @@ class EigenmodePortMonitor:
         # whether coefficients have a real-power-wave interpretation; it does
         # not control generalized modal decomposition.
         self.mode_power_valid = self.power_wave_valid
-        self.mode_decomposition_valid = np.column_stack(
-            tuple(
-                self._nondegenerate_reference_mask(
-                    nominal_frequency,
-                    mode_position,
-                )
-                for mode_position in range(nm)
-            )
-        )
+        self.mode_decomposition_valid = self.basis_plan.decomposition_eligible
         u_axis, v_axis = self.owner.transverse_axes
         measure = (
             grid.dl[self.owner.physical_transverse_axis]
@@ -528,32 +591,29 @@ class EigenmodePortMonitor:
 
         for frequency_index in range(nf):
             for mode_position in range(nm):
-                uses_power_basis = bool(self.power_wave_valid[frequency_index, mode_position])
-                mode_weights = (
-                    power_weights[mode_position]
-                    if uses_power_basis
-                    else reference_weights[mode_position]
+                uses_power_basis = (
+                    self.basis_plan.basis_kind[frequency_index, mode_position]
+                    == int(ModalBasisKind.POWER_WAVE)
                 )
-                anchor_scale = (
-                    np.ones(self.anchor_frequencies.size, dtype=np.float64)
-                    if uses_power_basis
-                    else reference_anchor_scale[:, mode_position]
-                )
+                mode_weights = self.basis_plan.interpolation_weights[mode_position]
+                profile_weights = mode_weights[:, frequency_index]
+                if not uses_power_basis:
+                    profile_weights = (
+                        profile_weights * self.basis_plan.profile_scales[mode_position]
+                    )
                 electric = []
                 magnetic = []
                 for component in range(3):
                     electric.append(
                         sum(
-                            mode_weights[anchor, frequency_index]
-                            * anchor_scale[anchor]
+                            profile_weights[anchor]
                             * self.anchor_e[anchor][mode_position][component]
                             for anchor in range(self.anchor_frequencies.size)
                         )
                     )
                     magnetic.append(
                         sum(
-                            mode_weights[anchor, frequency_index]
-                            * anchor_scale[anchor]
+                            profile_weights[anchor]
                             * self.anchor_h[anchor][mode_position][component]
                             for anchor in range(self.anchor_frequencies.size)
                         )

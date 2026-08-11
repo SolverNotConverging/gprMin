@@ -26,6 +26,18 @@ import numpy.typing as npt
 
 import gprMax.config as config
 from gprMax.eigenmode_plotting import plot_eigenmode_excitation, plot_eigenmode_port_fields
+from gprMax.eigenmode_policy import (
+    AnchorFallbackReason,
+    AnchorRequestKind,
+    AnchorTrackingOutcome,
+    GuardTrimSide,
+    ModeAnchorResolution,
+    ModeResolutionState,
+    ModeResolutionTrace,
+    PortInitialisationState,
+    PortInitialisationTrace,
+    PortRetryOutcome,
+)
 from gprMax.fdfd_eigenmode_solver.fdfd_1d_mode_solver import FDFD_1D_mode_solver
 from gprMax.fdfd_eigenmode_solver.fdfd_2d_mode_solver import FDFD_2D_mode_solver
 from gprMax.waveforms import Waveform
@@ -168,10 +180,12 @@ def initialise_eigenmode_ports(grid):
     for port in ports:
         requested = getattr(port, "requested_anchor_policy", port.anchor_policy)
         candidates = tuple(float(value) for value in (port.frequencies or (port.frequency,)))
-        guard_trimmed = False
-        single_fallback = False
+        retry_outcome = PortRetryOutcome.BROADBAND
+        transition_trace = PortInitialisationTrace()
 
         while True:
+            transition_trace = transition_trace.advance(PortInitialisationState.ATTEMPTING)
+            port.port_initialisation_trace = transition_trace
             port.frequency = candidates[0]
             port.frequencies = candidates
             # Suppress the legacy recursive fallback so this outer loop can
@@ -183,6 +197,8 @@ def initialise_eigenmode_ports(grid):
             except EigenmodeAnchorMismatchError as mismatch:
                 port.anchor_policy = requested
                 if requested != "auto":
+                    transition_trace = transition_trace.advance(PortInitialisationState.FAILED)
+                    port.port_initialisation_trace = transition_trace
                     raise
 
                 guard_result = _trim_failed_guard_anchors(
@@ -205,9 +221,13 @@ def initialise_eigenmode_ports(grid):
                             "significant-spectrum tail."
                         )
                         candidates = trimmed
-                        guard_trimmed = True
+                        retry_outcome = PortRetryOutcome.GUARD_TRIMMED
                         if port in grid.eigenmodesources:
                             port.spectrum_coverage_policy = "allow"
+                        transition_trace = transition_trace.advance(
+                            PortInitialisationState.RETRY_GUARD
+                        )
+                        port.port_initialisation_trace = transition_trace
                         continue
 
                 fallback = float(port.fallback_frequency)
@@ -221,21 +241,25 @@ def initialise_eigenmode_ports(grid):
                     "mode."
                 )
                 candidates = (fallback,)
-                guard_trimmed = False
-                single_fallback = True
+                retry_outcome = PortRetryOutcome.SINGLE_FALLBACK
+                transition_trace = transition_trace.advance(
+                    PortInitialisationState.RETRY_SINGLE
+                )
+                port.port_initialisation_trace = transition_trace
                 continue
+            except Exception:
+                transition_trace = transition_trace.advance(PortInitialisationState.FAILED)
+                port.port_initialisation_trace = transition_trace
+                raise
 
             port.anchor_policy = requested
             current_policy = getattr(port, "resolved_anchor_policy", requested)
             if requested != "auto":
                 port.resolved_anchor_policy = "explicit"
             elif current_policy in {"auto", "auto_broadband", "explicit"}:
-                if single_fallback:
-                    port.resolved_anchor_policy = "auto_single_fallback"
-                elif guard_trimmed:
-                    port.resolved_anchor_policy = "auto_broadband_guard_trimmed"
-                else:
-                    port.resolved_anchor_policy = "auto_broadband"
+                port.resolved_anchor_policy = retry_outcome.legacy_auto_policy_name
+            transition_trace = transition_trace.advance(PortInitialisationState.COMMITTED)
+            port.port_initialisation_trace = transition_trace
             break
 
 
@@ -306,7 +330,9 @@ class EigenmodeSource(Source):
         self.port_anchor_mode_propagating = None
         self.port_anchor_balanced_power = None
         self.port_mode_anchor_policies = None
+        self.port_mode_anchor_resolutions = None
         self.port_mode_solvers = None
+        self.port_initialisation_trace = None
         self.broadband_e_envelopes = None
         self.broadband_h_envelopes = None
         self.broadband_modal_e_real = None
@@ -396,7 +422,7 @@ class EigenmodeSource(Source):
             (frequency,),
             (self.mode_solver,),
             mode_indices,
-            forced_policies=("auto_single_fallback",) * len(mode_indices),
+            forced_fallback_reason=AnchorFallbackReason.TRACKING_MISMATCH,
         )
         self.resolved_anchor_policy = "auto_single_fallback"
         self._prepare_single_frequency_injection(G)
@@ -432,6 +458,7 @@ class EigenmodeSource(Source):
             anchor_mode_propagating=self.port_anchor_mode_propagating,
             anchor_balanced_power=self.port_anchor_balanced_power,
             mode_anchor_policies=self.port_mode_anchor_policies,
+            mode_anchor_resolutions=self.port_mode_anchor_resolutions,
         )
         monitor.prepare(G)
         self.port_monitor = monitor
@@ -612,24 +639,13 @@ class EigenmodeSource(Source):
             )
         return int(matches[0])
 
-    @staticmethod
-    def _anchor_policy_name(*, automatic, guard_trimmed, nonpropagating_trimmed, fallback):
-        if fallback:
-            return "auto_single_fallback"
-        policy = "auto_broadband" if automatic else "explicit"
-        if guard_trimmed:
-            policy += "_guard_trimmed"
-        if nonpropagating_trimmed:
-            policy += "_nonpropagating_trimmed"
-        return policy
-
     def _prepare_port_anchor_bank(
         self,
         frequencies,
         solvers,
         mode_indices,
         *,
-        forced_policies=None,
+        forced_fallback_reason=None,
     ):
         """Build one rectangular field bank and resolve anchors per mode."""
 
@@ -697,7 +713,7 @@ class EigenmodeSource(Source):
             anchor_h.append(frequency_h)
             anchor_neff.append(frequency_neff)
 
-        valid, reference_valid, policies, overlaps = self._resolve_mode_anchor_masks(
+        valid, reference_valid, resolutions, overlaps = self._resolve_mode_anchor_masks(
             frequencies,
             solvers,
             mode_indices,
@@ -705,8 +721,12 @@ class EigenmodeSource(Source):
             anchor_h,
             propagating,
         )
-        if forced_policies is not None:
-            policies = tuple(str(value) for value in forced_policies)
+        if forced_fallback_reason is not None:
+            resolutions = tuple(
+                resolution.force_single_fallback(forced_fallback_reason)
+                for resolution in resolutions
+            )
+        policies = tuple(resolution.legacy_policy_name for resolution in resolutions)
 
         self.port_anchor_frequencies = frequencies
         self.port_anchor_e = anchor_e
@@ -717,6 +737,7 @@ class EigenmodeSource(Source):
         self.port_anchor_mode_propagating = propagating
         self.port_anchor_balanced_power = balanced_power
         self.port_mode_anchor_policies = policies
+        self.port_mode_anchor_resolutions = resolutions
         self.port_mode_solvers = solvers
         self.anchor_overlaps = overlaps
 
@@ -744,6 +765,9 @@ class EigenmodeSource(Source):
         """Track raw modes first, then retain only forward-power anchors."""
 
         automatic = self._automatic_anchor_policy()
+        requested = (
+            AnchorRequestKind.AUTO if automatic else AnchorRequestKind.EXPLICIT
+        )
         anchor_count = len(frequencies)
         valid = np.zeros_like(propagating, dtype=bool)
         reference_valid = np.zeros_like(propagating, dtype=bool)
@@ -752,14 +776,16 @@ class EigenmodeSource(Source):
             np.nan,
             dtype=np.float64,
         )
-        policies = []
+        resolutions = []
         band_low = float(self.dft_start) if self.dft_start is not None else -np.inf
         band_high = float(self.dft_stop) if self.dft_stop is not None else np.inf
 
         for mode_position, mode_index in enumerate(mode_indices):
             retained = list(range(anchor_count))
-            guard_trimmed = False
+            guard_trim_side = GuardTrimSide.NONE
             fallback = False
+            fallback_reason = AnchorFallbackReason.NONE
+            trace = ModeResolutionTrace().advance(ModeResolutionState.TRACKING)
             while len(retained) > 1:
                 mismatch = None
                 for pair_position in range(1, len(retained)):
@@ -784,8 +810,10 @@ class EigenmodeSource(Source):
                         mismatch = exc
                         break
                 if mismatch is None:
+                    trace = trace.advance(ModeResolutionState.TRACKED)
                     break
                 if not automatic:
+                    mismatch.resolution_trace = trace.advance(ModeResolutionState.FAILED)
                     raise mismatch
 
                 guard = _trim_failed_guard_anchors(
@@ -819,7 +847,9 @@ class EigenmodeSource(Source):
                             "profile across the trimmed significant-spectrum tail."
                         )
                         retained = trimmed
-                        guard_trimmed = True
+                        guard_trim_side = GuardTrimSide(side)
+                        trace = trace.advance(ModeResolutionState.GUARD_TRIMMED)
+                        trace = trace.advance(ModeResolutionState.TRACKING)
                         continue
 
                 centre = self._centre_anchor_index(frequencies)
@@ -839,7 +869,13 @@ class EigenmodeSource(Source):
                 )
                 retained = [centre]
                 fallback = True
+                fallback_reason = AnchorFallbackReason.TRACKING_MISMATCH
+                trace = trace.advance(ModeResolutionState.SINGLE_FALLBACK)
                 break
+
+            if trace.current is ModeResolutionState.TRACKING:
+                # A one-anchor candidate bank has no adjacent pair to track.
+                trace = trace.advance(ModeResolutionState.TRACKED)
 
             # Phase is transported through every successfully tracked raw mode,
             # including an evanescent anchor, before physical filtering.
@@ -864,6 +900,7 @@ class EigenmodeSource(Source):
                         field * factor for field in anchor_h[second][mode_position]
                     ]
 
+            trace = trace.advance(ModeResolutionState.CLASSIFYING_POWER)
             usable = [index for index in retained if propagating[index, mode_position]]
             rejected = [index for index in retained if not propagating[index, mode_position]]
             nonpropagating_trimmed = bool(rejected)
@@ -897,6 +934,7 @@ class EigenmodeSource(Source):
                         frequencies[centre],
                         centre=True,
                     )
+                trace = trace.advance(ModeResolutionState.FAILED)
                 raise ValueError(
                     f"Eigenmode port {self.port_index} mode {mode_index} has no "
                     "propagating anchor with forward real power."
@@ -904,6 +942,7 @@ class EigenmodeSource(Source):
 
             if len(usable) > 1 and np.any(np.diff(usable) > 1):
                 if not automatic:
+                    trace = trace.advance(ModeResolutionState.FAILED)
                     raise ValueError(
                         f"Eigenmode port {self.port_index} mode {mode_index} has "
                         "disconnected propagating anchor ranges. Use separate "
@@ -925,8 +964,9 @@ class EigenmodeSource(Source):
                 )
                 usable = [centre]
                 fallback = True
+                fallback_reason = AnchorFallbackReason.DISCONNECTED_PROPAGATION
+                trace = trace.advance(ModeResolutionState.SINGLE_FALLBACK)
 
-            valid[usable, mode_position] = True
             # The modal monitor may use every successfully tracked raw mode,
             # including finite-normalized evanescent modes. Source synthesis
             # remains restricted to ``valid`` (forward-power) anchors. A
@@ -934,17 +974,30 @@ class EigenmodeSource(Source):
             # a mode rejected by the tracking guard cannot leak back into the
             # monitor interpolation.
             reference_indices = usable if fallback else retained
-            reference_valid[reference_indices, mode_position] = True
-            policies.append(
-                self._anchor_policy_name(
-                    automatic=automatic,
-                    guard_trimmed=guard_trimmed,
-                    nonpropagating_trimmed=nonpropagating_trimmed,
-                    fallback=fallback,
-                )
+            trace = trace.advance(ModeResolutionState.RESOLVED)
+            tracking = AnchorTrackingOutcome.BROADBAND
+            if fallback:
+                tracking = AnchorTrackingOutcome.SINGLE_FALLBACK
+            elif guard_trim_side is not GuardTrimSide.NONE:
+                tracking = AnchorTrackingOutcome.GUARD_TRIMMED
+            resolution = ModeAnchorResolution(
+                mode_index=mode_index,
+                requested=requested,
+                tracking=tracking,
+                fallback_reason=fallback_reason,
+                guard_trim_side=guard_trim_side,
+                nonpropagating_excluded=nonpropagating_trimmed,
+                tracked_indices=tuple(retained),
+                source_power_indices=tuple(usable),
+                monitor_reference_indices=tuple(reference_indices),
+                nonpropagating_indices=tuple(rejected),
+                trace=trace,
             )
+            valid[list(resolution.source_power_indices), mode_position] = True
+            reference_valid[list(resolution.monitor_reference_indices), mode_position] = True
+            resolutions.append(resolution)
 
-        return valid, reference_valid, tuple(policies), overlaps
+        return valid, reference_valid, tuple(resolutions), overlaps
 
     def _solve_broadband_eigenmode(self, G, frequencies):
         """Solve candidate anchors, resolve each mode, and synthesize the source."""
@@ -957,7 +1010,7 @@ class EigenmodeSource(Source):
             solvers.append(self.mode_solver)
 
         mode_indices = tuple(self.mode_indices or range(1, self.mode_count + 1))
-        valid, policies = self._prepare_port_anchor_bank(
+        valid, _ = self._prepare_port_anchor_bank(
             frequencies,
             solvers,
             mode_indices,
@@ -973,18 +1026,13 @@ class EigenmodeSource(Source):
             dtype=np.complex128,
         )
         self.mode_solvers = [solvers[index] for index in used]
-        excitation_policy = policies[excitation_position]
-        if "nonpropagating_trimmed" in excitation_policy or (
-            self._automatic_anchor_policy()
-            and (
-                "guard_trimmed" in excitation_policy or excitation_policy == "auto_single_fallback"
-            )
-        ):
+        excitation_resolution = self.port_mode_anchor_resolutions[excitation_position]
+        if excitation_resolution.permits_endpoint_source_coverage:
             # The physical filtering warning supersedes the generic spectrum
             # coverage error; endpoint extrapolation keeps the time trace finite.
             self.spectrum_coverage_policy = "allow"
 
-        if excitation_policy == "auto_single_fallback":
+        if excitation_resolution.uses_single_fallback:
             self.frequency = excitation_frequencies[0]
             self.modal_e = self.anchor_modal_e[0]
             self.modal_h = self.anchor_modal_h[0]
@@ -2219,6 +2267,7 @@ class EigenmodeReceiver(EigenmodeSource):
             anchor_mode_propagating=self.port_anchor_mode_propagating,
             anchor_balanced_power=self.port_anchor_balanced_power,
             mode_anchor_policies=self.port_mode_anchor_policies,
+            mode_anchor_resolutions=self.port_mode_anchor_resolutions,
         )
         monitor.prepare(G)
         self.port_monitor = monitor

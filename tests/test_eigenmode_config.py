@@ -10,6 +10,7 @@ from gprMax.eigenmode_config import (
     EigenmodePortSpec,
     sampled_waveform_spectrum,
 )
+from gprMax.eigenmode_policy import PortInitialisationState
 from gprMax.sources import EigenmodeAnchorMismatchError, EigenmodeSource, initialise_eigenmode_ports
 from gprMax.waveforms import Waveform
 
@@ -247,6 +248,13 @@ def test_guard_band_tracking_failure_trims_only_the_affected_auto_port(monkeypat
     assert receiver.resolved_anchor_policy == "auto_broadband"
     assert source.attempts == [anchors, (45e9, 55e9, 65e9, 78e9)]
     assert receiver.attempts == [anchors]
+    assert source.port_initialisation_trace.states == (
+        PortInitialisationState.REQUESTED,
+        PortInitialisationState.ATTEMPTING,
+        PortInitialisationState.RETRY_GUARD,
+        PortInitialisationState.ATTEMPTING,
+        PortInitialisationState.COMMITTED,
+    )
     assert "endpoint modal profile" in warnings[0]
 
 
@@ -278,6 +286,13 @@ def test_passive_in_band_tracking_failure_does_not_mutate_source(monkeypatch):
     assert receiver.resolved_anchor_policy == "auto_single_fallback"
     assert source.attempts == [anchors]
     assert receiver.attempts == [anchors, (55e9,)]
+    assert receiver.port_initialisation_trace.states == (
+        PortInitialisationState.REQUESTED,
+        PortInitialisationState.ATTEMPTING,
+        PortInitialisationState.RETRY_SINGLE,
+        PortInitialisationState.ATTEMPTING,
+        PortInitialisationState.COMMITTED,
+    )
     assert "eigenmode port 2" in warnings[0]
 
 
@@ -312,3 +327,4 @@ def test_nonpropagating_centre_anchor_after_tracking_fallback_is_an_error(
 
     assert source.attempts == [anchors, (55e9,)]
     assert receiver.attempts == []
+    assert source.port_initialisation_trace.current is PortInitialisationState.FAILED
