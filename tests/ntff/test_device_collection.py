@@ -278,7 +278,7 @@ def test_time_domain_kernel_uses_configured_real_type(backend, c_real, marker):
     assert "time_origin_steps[point]" in source
     if backend != "cuda":
         assert "ksir_atomic_add" not in source
-        assert "for (int patch = 0; patch < neffective_patches; patch++)" in source
+        assert "for (int patch_antenna = 0; patch_antenna < neffective_patches; patch_antenna++)" in source
 
 
 class _FakeArray:

@@ -135,7 +135,7 @@ def evaluate_far_zone_patches(
     patch_block_size: int = 8192,
     nthreads: int = 1,
 ) -> npt.NDArray[np.complexfloating]:
-    """Evaluate KSIR from explicit patch geometry and phasors.
+    """Evaluate KSIR from explicit patch_antenna geometry and phasors.
 
     A Cython/OpenMP implementation is used when the extension is available.
     The blocked NumPy implementation remains the source-tree fallback and
@@ -192,14 +192,14 @@ def evaluate_far_zone_patches(
     if normals.shape != positions.shape:
         raise ValueError("patch_normals must match patch_positions")
     if areas.shape != (positions.shape[0],):
-        raise ValueError("area_weights must have one value per patch")
+        raise ValueError("area_weights must have one value per patch_antenna")
     if (
         not np.all(np.isfinite(positions))
         or not np.all(np.isfinite(normals))
         or not np.all(np.isfinite(areas))
         or np.any(areas <= 0)
     ):
-        raise ValueError("patch geometry must be finite with positive areas")
+        raise ValueError("patch_antenna geometry must be finite with positive areas")
     if not np.allclose(np.linalg.norm(normals, axis=1), 1.0):
         raise ValueError("patch_normals must be unit vectors")
 
@@ -329,14 +329,14 @@ def evaluate_exact_points_patches(
     if normals.shape != positions.shape:
         raise ValueError("patch_normals must match patch_positions")
     if areas.shape != (positions.shape[0],):
-        raise ValueError("area_weights must have one value per patch")
+        raise ValueError("area_weights must have one value per patch_antenna")
     if (
         not np.all(np.isfinite(positions))
         or not np.all(np.isfinite(normals))
         or not np.all(np.isfinite(areas))
         or np.any(areas <= 0)
     ):
-        raise ValueError("patch geometry must be finite with positive areas")
+        raise ValueError("patch_antenna geometry must be finite with positive areas")
     if not np.allclose(np.linalg.norm(normals, axis=1), 1.0):
         raise ValueError("patch_normals must be unit vectors")
 

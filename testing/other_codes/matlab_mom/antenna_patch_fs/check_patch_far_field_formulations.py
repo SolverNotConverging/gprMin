@@ -1,4 +1,4 @@
-"""Compare KSIR and Love-current far fields for the MATLAB patch benchmark."""
+"""Compare KSIR and Love-current far fields for the MATLAB patch_antenna benchmark."""
 
 import argparse
 import csv
@@ -296,7 +296,7 @@ def _write_results(angle, matlab, patterns):
     axes[1, 0].set_ylabel("Difference from MATLAB (dB)")
     axes[0, 0].legend(frameon=False)
     axes[1, 0].legend(frameon=False)
-    fig.suptitle("Rectangular patch at 2.37 GHz: independent far-field formulations")
+    fig.suptitle("Rectangular patch_antenna at 2.37 GHz: independent far-field formulations")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     figure_path = RESULTS_DIR / f"{OUTPUT_STEM}.png"
     fig.savefig(figure_path, dpi=220, bbox_inches="tight")

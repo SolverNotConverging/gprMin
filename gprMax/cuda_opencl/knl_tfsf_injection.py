@@ -36,11 +36,11 @@ from string import Template
 #
 # Thread layout for all kernels-
 #   Thread t handles one cell on the face.
-#   x-faces: face patch is (y_stop - y_start + 1) x (z_stop - z_start + 1)
+#   x-faces: face patch_antenna is (y_stop - y_start + 1) x (z_stop - z_start + 1)
 #     t = (j - y_start) * NZ_FACE + (k - z_start)
-#   y-faces: face patch is (x_stop - x_start + 1) x (z_stop - z_start + 1)
+#   y-faces: face patch_antenna is (x_stop - x_start + 1) x (z_stop - z_start + 1)
 #     t = (i - x_start) * NZ_FACE + (k - z_start)
-#   z-faces: face patch is (x_stop - x_start + 1) x (y_stop - y_start + 1)
+#   z-faces: face patch_antenna is (x_stop - x_start + 1) x (y_stop - y_start + 1)
 #     t = (i - x_start) * NY_FACE + (j - y_start)
 #
 # Coefficient mapping (from Cython)-
@@ -312,7 +312,7 @@ def _axial_E_args_metal(name):
 #   for j in [y_start, y_stop):    for k in [z_start, z_stop+1):
 #     Hz[i-1, j, k] += coef_H_zx * E_y[index]   coef_H_zx = updatecoeffsH[1]
 #
-# Thread t handles one (j,k) pair. Face patch: NY_FACE x NZ_FACE
+# Thread t handles one (j,k) pair. Face patch_antenna: NY_FACE x NZ_FACE
 # Two corrections per thread (Hy and Hz) with different loop bounds.
 
 

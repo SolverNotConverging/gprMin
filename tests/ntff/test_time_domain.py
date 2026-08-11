@@ -197,7 +197,7 @@ def test_monitor_uses_patch_support_not_only_patch_centres_for_point_validation(
     surface = build_component_surface("Ez", (2, 2, 2), (6, 6, 6), (0.1, 0.1, 0.1), (10, 10, 10))
     # Ez patches on a y-normal face are centred from y=0.2, but their
     # quadrature support starts at y=0.15.  This point is therefore inside the
-    # closed component surface even though it lies below every patch centre.
+    # closed component surface even though it lies below every patch_antenna centre.
     with pytest.raises(ValueError, match="strictly outside"):
         KSIRTimeDomainMonitor(
             "inside_patch_support",

@@ -1,4 +1,4 @@
-"""Plot normalised MATLAB-MoM and gprMax-KSIR patch antenna patterns."""
+"""Plot normalised MATLAB-MoM and gprMax-KSIR patch_antenna antenna patterns."""
 
 import csv
 import json
@@ -154,7 +154,7 @@ def main():
         ax.grid(alpha=0.45)
         ax.set_title(title, pad=18)
     axes[0].legend(loc="lower center", bbox_to_anchor=(1.08, -0.19), ncol=2, frameon=False)
-    fig.suptitle("Rectangular patch at 2.37 GHz — normalised co-polar field pattern")
+    fig.suptitle("Rectangular patch_antenna at 2.37 GHz — normalised co-polar field pattern")
     fig.tight_layout(rect=(0, 0.07, 1, 0.96))
     polar_path = RESULTS_DIR / "patch_pattern_comparison.png"
     fig.savefig(polar_path, dpi=220, bbox_inches="tight")
@@ -453,7 +453,7 @@ def main():
     )
     axes[0].axhline(-10, color="0.45", linewidth=1, linestyle=":")
     axes[0].set_ylabel(r"$|S_{11}|$ (dB)")
-    axes[0].set_title(r"Rectangular patch — 50 $\Omega$ port comparison")
+    axes[0].set_title(r"Rectangular patch_antenna — 50 $\Omega$ port comparison")
     axes[0].grid(alpha=0.35)
     axes[0].legend(fontsize=8, ncol=2)
 
@@ -692,7 +692,7 @@ def main():
     print(f"Saved mesh-convergence comparison to {mesh_path}")
     print(f"Saved comparison data to {combined_path}")
     print(f"Saved S11 comparison to {s11_plot_path}")
-    print(f"Saved patch-length S11 comparison to {length_s11_plot_path}")
+    print(f"Saved patch_antenna-length S11 comparison to {length_s11_plot_path}")
     print(f"Saved board-footprint S11 comparison to {board_s11_plot_path}")
 
 

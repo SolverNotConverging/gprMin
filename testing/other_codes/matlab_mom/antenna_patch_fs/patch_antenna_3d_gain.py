@@ -1,4 +1,4 @@
-"""Calculate and plot the full-sphere gain of the rectangular patch example."""
+"""Calculate and plot the full-sphere gain of the rectangular patch_antenna example."""
 
 import argparse
 import csv
@@ -24,7 +24,7 @@ FAR_FIELD_ID = "gain_3d"
 
 
 def build_gain_scene():
-    """Add one physical port and a full-sphere gain request to the patch."""
+    """Add one physical port and a full-sphere gain request to the patch_antenna."""
 
     patch._configure_mesh("standard")
     scene, _ = patch.build_scene(feed_mode="single", mesh_mode="standard")
@@ -199,14 +199,14 @@ def plot_gain(result, destination):
 
     axes.set_xlabel("x")
     axes.set_ylabel("y")
-    axes.set_zlabel("z (patch broadside)")
+    axes.set_zlabel("z (patch_antenna broadside)")
     axes.set_box_aspect((1, 1, 1))
     axes.set_xlim(-1, 1)
     axes.set_ylim(-1, 1)
     axes.set_zlim(-1, 1)
     axes.view_init(elev=24, azim=-42)
     axes.set_title(
-        "gprMax rectangular patch: 3-D gain at 2.37 GHz\n"
+        "gprMax rectangular patch_antenna: 3-D gain at 2.37 GHz\n"
         f"peak {peak_gain_dbi:.2f} dBi; radial scale clipped at "
         f"{GAIN_DYNAMIC_RANGE_DB:.0f} dB"
     )

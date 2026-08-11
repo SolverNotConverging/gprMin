@@ -113,12 +113,18 @@ further groups for each named or numbered output.
                 outgoing
                 electric_cross_power_matrix
                 power_matrix
+                anchor_mode_valid
+                anchor_mode_reference_valid
+                anchor_mode_propagating
+                anchor_balanced_power
+                decomposition_valid
                 power_normalization_valid
                 power_matrix_valid
                 valid
                 condition_number
                 S
                 valid_S
+                power_wave_valid_S
 
 Within each individual ``rx`` group are the following attributes:
 
@@ -412,6 +418,27 @@ coefficient divided by the excited source-mode incident coefficient, so the
 source group contains modal S11 and other groups contain S21, S31, and modal
 conversion terms.
 
+Each mode has two audited anchor banks. ``anchor_mode_valid`` selects the
+propagating, one-watt profiles used by TF/SF source synthesis and real-power
+normalization. ``anchor_mode_reference_valid`` selects the successfully
+tracked profiles used only by modal monitoring and can include evanescent
+anchors. For generalized-only bins, the applicable contiguous evanescent
+reference run is converted to a common E/H-balanced scale before its E, H,
+and effective index are interpolated with matching branch-local weights.
+Propagating and evanescent anchors are never mixed across cutoff, and
+disconnected evanescent runs are not bridged. ``anchor_mode_propagating``
+records the raw forward-power classification, and ``anchor_balanced_power``
+records each raw profile's positive balanced E/H power; its inverse square
+root supplies the reference scale.
+
+The ``AnchorFrequencies`` attribute remains the union of the retained
+propagating source/power anchors, while ``ReferenceAnchorFrequencies`` is the
+union of retained monitor-reference anchors. ``CandidateAnchorFrequencies``
+lists every solved candidate; use it together with
+``anchor_mode_reference_valid`` to recover the monitor-reference frequencies
+for each mode rather than only their union. Non-propagating reference anchors
+never drive the source and never become power waves.
+
 The complex ``electric_cross_power_matrix`` and Hermitian ``power_matrix``
 both have shape
 ``(nfrequencies, nmodes, nmodes)``. For a modal coefficient vector
@@ -426,11 +453,16 @@ exactly orthogonal. The incident and outgoing arrays are generalized modal
 travelling-wave coefficients; an individual coefficient magnitude squared is
 not an additive power when ``power_matrix`` is non-diagonal. The electric
 cross-power matrix is retained to reconstruct total-field flux in lossy
-ports. ``power_normalization_valid`` is a per-mode mask,
-``power_matrix_valid`` is a per-frequency mask, and ``valid`` and ``valid_S``
-also include decomposition conditioning and source-spectrum checks.
+ports. ``decomposition_valid`` is the per-mode eligibility mask for the
+generalized modal solve, while ``valid`` and ``valid_S`` also include its
+conditioning and source-spectrum checks. ``power_normalization_valid`` is the
+stricter per-mode real-power-wave mask, ``power_matrix_valid`` is a
+per-frequency power-form mask, and ``power_wave_valid_S`` combines the source
+and destination power requirements for each S coefficient. A below-cutoff
+coefficient can therefore have ``valid_S=1`` and ``power_wave_valid_S=0``.
 Ill-conditioned or weakly excited bins remain in the file but must not be
-plotted as valid results.
+plotted as valid results; generalized coefficients must not be used for power
+accounting unless the corresponding power-wave mask is also true.
 
 A run with one eigenmode source also writes
 ``<output>_sparameters.csv`` with one row per frequency, destination port,
@@ -620,9 +652,11 @@ arrays and reference impedance are NaN because no artificial voltage/current
 equivalent is introduced; ``representations`` identifies them as
 ``modal_power_waves`` (the retained schema identifier), and ``modal_ports``
 retains the generalized modal amplitudes, electric cross-power matrix, and
-Hermitian forward-wave power matrix. Modal amplitudes have units ``sqrt(W) s``
-and their dimensionless quadratic matrices produce ``W s**2`` spectral
-power. A zero-amplitude
+Hermitian forward-wave power matrix. Where the real-power masks are true,
+modal amplitudes have units ``sqrt(W) s`` and their dimensionless quadratic
+matrices produce ``W s**2`` spectral power. A finite coefficient outside that
+mask is a generalized reference-basis amplitude only; its magnitude squared
+is not power. A zero-amplitude
 conventional source remains a terminated port with zero incident voltage; its
 terminal voltage/current and signed accepted power can still be non-zero
 through mutual coupling.

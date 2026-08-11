@@ -106,8 +106,8 @@ conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs
 conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed series --gpu 0
 conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed frill --gpu 0
 conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --conductor box --gpu 0
-conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --patch-trim-cells 1 --gpu 0
-conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --patch-trim-cells 2 --gpu 0
+conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --patch_antenna-trim-cells 1 --gpu 0
+conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --patch_antenna-trim-cells 2 --gpu 0
 conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --board-trim-cells 1 --gpu 0
 conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --board-trim-cells 2 --gpu 0
 conda run -n gprMax-devel python testing/other_codes/matlab_mom/antenna_patch_fs/patch_antenna_gprmax.py --feed single --mesh fine-z --gpu 0

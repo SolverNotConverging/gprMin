@@ -100,9 +100,9 @@ CASES = {
         model_characteristic_length=0.079,
         matlab_characteristic_length=0.079,
     ),
-    "patch": AntennaCase(
-        name="patch",
-        label="40 by 30 mm substrate-backed patch",
+    "patch_antenna": AntennaCase(
+        name="patch_antenna",
+        label="40 by 30 mm substrate-backed patch_antenna",
         reference_impedance=50.0,
         frequency_min=1.50e9,
         frequency_max=3.20e9,
@@ -292,13 +292,13 @@ def build_monopole_scene():
 
 
 def build_patch_scene():
-    """Build the single-edge-feed MATLAB substrate-backed patch geometry."""
+    """Build the single-edge-feed MATLAB substrate-backed patch_antenna geometry."""
 
-    case = CASES["patch"]
+    case = CASES["patch_antenna"]
     domain = (0.120, 0.100, 120 * PATCH_DZ)
     scene = _common_scene(
         case,
-        "RxPort MATLAB comparison: single-feed rectangular patch",
+        "RxPort MATLAB comparison: single-feed rectangular patch_antenna",
         domain,
     )
     centre_x = domain[0] / 2
@@ -346,7 +346,7 @@ BUILDERS = {
     "dipole": build_dipole_scene,
     "bowtie": build_bowtie_scene,
     "monopole": build_monopole_scene,
-    "patch": build_patch_scene,
+    "patch_antenna": build_patch_scene,
 }
 
 

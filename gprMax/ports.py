@@ -244,9 +244,13 @@ def evaluate_port_power_spectrum(
                 dtype=real_dtype,
             )
 
+        power_wave_valid_value = getattr(output, "power_wave_valid", None)
+        if power_wave_valid_value is None:
+            power_wave_valid_value = output.mode_power_valid
+        power_wave_valid = np.asarray(power_wave_valid_value, dtype=bool)
         modal_valid = (
             np.asarray(output.result.valid, dtype=bool)
-            & np.asarray(output.mode_power_valid, dtype=bool).T
+            & power_wave_valid.T
             & np.asarray(output.power_matrix_valid, dtype=bool)[np.newaxis, :]
         )
         finite = (
@@ -256,6 +260,19 @@ def evaluate_port_power_spectrum(
             & np.all(np.isfinite(cross_power_matrix), axis=(1, 2))
             & np.isfinite(incident_power)
             & np.isfinite(accepted_power)
+        )
+        physical_power_valid = np.all(modal_valid, axis=0) & finite
+        # Generalized coefficients are retained below cutoff for modal/S
+        # diagnostics, but they are not power waves. Zero their adapter-level
+        # powers so an arbitrary quadratic-form value cannot set antenna gain
+        # thresholds before ``terminal_valid`` is applied downstream.
+        incident_power = np.where(physical_power_valid, incident_power, 0).astype(
+            real_dtype,
+            copy=False,
+        )
+        accepted_power = np.where(physical_power_valid, accepted_power, 0).astype(
+            real_dtype,
+            copy=False,
         )
         nan_phasor = np.full(frequency.shape, np.nan + 1j * np.nan, dtype=complex_dtype)
         return PortPowerSpectrum(
@@ -269,7 +286,7 @@ def evaluate_port_power_spectrum(
             incident_power=incident_power,
             accepted_power=accepted_power,
             mesh_valid=_port_mesh_valid(output, grid, frequency),
-            terminal_valid=np.all(modal_valid, axis=0) & finite,
+            terminal_valid=physical_power_valid,
             representation="modal_power_waves",
             mode_indices=output.mode_indices,
             incident_modal_amplitudes=incident_modal,

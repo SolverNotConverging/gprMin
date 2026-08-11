@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class Triangle(RotatableMixin, GeometryUserObject):
-    """Introduces a triangular patch or a triangular prism with specific
+    """Introduces a triangular patch_antenna or a triangular prism with specific
         properties into the model.
 
     Attributes:
@@ -42,7 +42,7 @@ class Triangle(RotatableMixin, GeometryUserObject):
         p2: list of the coordinates (x,y,z) of the second apex of the triangle.
         p3: list of the coordinates (x,y,z) of the third apex of the triangle.
         thickness: float for the thickness of the triangular prism. If the
-                    thickness is zero then a triangular patch is created.
+                    thickness is zero then a triangular patch_antenna is created.
         material_id: string for the material identifier that must correspond
                         to material that has already been defined.
         material_ids: list of material identifiers in the x, y, z directions.

@@ -46,7 +46,7 @@ cpdef void evaluate_far_zone_patches(
     therefore owns one output element and can accumulate without atomics. The
     combined loop also uses all threads when either the number of frequencies
     or the number of directions is small. Position and normal projections are
-    intentionally calculated inside the patch loop so the kernel does not
+    intentionally calculated inside the patch_antenna loop so the kernel does not
     allocate a potentially very large ``ndirections x npatches`` temporary
     array.
 
@@ -254,7 +254,7 @@ cpdef void gather_equivalent_current_component(
     const float_or_double[::1] field,
     float_or_double[::1] output,
 ):
-    """Arithmetic-average one Yee stencil for every common-surface patch."""
+    """Arithmetic-average one Yee stencil for every common-surface patch_antenna."""
 
     cdef Py_ssize_t patch, sample
     cdef Py_ssize_t npatches = stencil_indices.shape[1]

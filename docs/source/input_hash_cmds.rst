@@ -1540,9 +1540,10 @@ defined:
   causal time that preserves its significant temporal support, leaving the
   remaining time window for propagation and ring-down.
 * A custom waveform identifier may be supplied instead. Its exact sampled
-  spectrum is checked before any modal solve. Significant DC or Nyquist
-  content, or more than one percent spectral power outside the requested band,
-  is an error that reports the measured range and recommends ``auto``.
+  spectrum is checked before any modal solve. Significant DC or Nyquist bins
+  are discarded with a warning. More than one percent spectral power outside
+  the requested band remains an error. Use a band-limited waveform, or select
+  ``auto`` to synthesize one automatically for a finite frequency band.
 * ``f1`` is an optional amplitude scale and is valid only with ``auto``.
 * ``c1`` optionally controls the waveform/DFT plot: ``y`` always writes it and
   ``n`` always suppresses it. If omitted, geometry-only runs write the plot and

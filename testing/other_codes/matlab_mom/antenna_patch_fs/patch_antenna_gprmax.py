@@ -1,4 +1,4 @@
-"""Run the gprMax model of the Antenna Toolbox rectangular patch case."""
+"""Run the gprMax model of the Antenna Toolbox rectangular patch_antenna case."""
 
 import argparse
 import csv
@@ -143,14 +143,14 @@ def build_scene(
     patch_trim_cells=0,
     board_trim_cells=0,
 ):
-    """Build the patch, its KSIR principal-plane requests, and fine view."""
+    """Build the patch_antenna, its KSIR principal-plane requests, and fine view."""
 
     scene = gprMax.Scene()
     scene.add(
         gprMax.Title(
-            name=f"Rectangular patch antenna: MATLAB comparison "
+            name=f"Rectangular patch_antenna antenna: MATLAB comparison "
             f"({feed_mode} feed, {mesh_mode} mesh, {conductor_mode} conductors, "
-            f"{patch_trim_cells} patch and {board_trim_cells} board cell(s) "
+            f"{patch_trim_cells} patch_antenna and {board_trim_cells} board cell(s) "
             f"trimmed per end)"
         )
     )
@@ -181,12 +181,12 @@ def build_scene(
     gx0, gy0, gx1, gy1 = _rectangle_bounds(ground_length, ground_width)
     patch_length = PATCH_LENGTH - 2 * patch_trim_cells * DX
     if patch_length <= 0:
-        raise ValueError("Patch trimming must leave a positive patch length")
+        raise ValueError("Patch trimming must leave a positive patch_antenna length")
     px0, py0, px1, py1 = _rectangle_bounds(patch_length, PATCH_WIDTH)
 
     # The dielectric must be built before the conductors so PEC remains the
     # final material assignment. For the one-cell-thick comparison, the ground
-    # extends down and the patch extends up. Their substrate-facing surfaces
+    # extends down and the patch_antenna extends up. Their substrate-facing surfaces
     # therefore stay at the same coordinates as the zero-thickness plates.
     scene.add(
         gprMax.Box(
@@ -386,7 +386,7 @@ def _read_feed_edge_fields(h5, feed_mode):
         receiver_group = h5["rxs"]
     except KeyError as exc:
         raise RuntimeError(
-            "The HDF5 output has no feed receivers; rerun the updated patch model"
+            "The HDF5 output has no feed receivers; rerun the updated patch_antenna model"
         ) from exc
 
     for receiver in receiver_group.values():
@@ -506,7 +506,7 @@ def calculate_s11_hdf5(h5_path, feed_mode="distributed"):
     reflected_voltage = total_voltage - incident_voltage
 
     # Zero padding samples the engineering-convention DTFT more finely around
-    # the narrow patch resonance. It interpolates the transform but does not
+    # the narrow patch_antenna resonance. It interpolates the transform but does not
     # change the independent 1 / TIME_WINDOW spectral resolution.
     n_fft = S11_FFT_ZERO_PADDING * total_voltage.size
     frequencies = np.fft.rfftfreq(n_fft, d=dt)
@@ -776,12 +776,12 @@ def main():
         ),
     )
     parser.add_argument(
-        "--patch-trim-cells",
+        "--patch_antenna-trim-cells",
         type=int,
         choices=range(0, 11),
         default=0,
         metavar="N",
-        help="remove N x-directed mesh cells from each end of the patch",
+        help="remove N x-directed mesh cells from each end of the patch_antenna",
     )
     parser.add_argument(
         "--board-trim-cells",

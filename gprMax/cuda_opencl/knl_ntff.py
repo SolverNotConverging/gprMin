@@ -66,9 +66,9 @@ kernel void accumulate_ntff(
         """
     if (i < total) {
         int frequency = i / npatches;
-        int patch = i - frequency * npatches;
-        $REAL inside_value = field[inside_index[patch]];
-        $REAL outside_value = field[outside_index[patch]];
+        int patch_antenna = i - frequency * npatches;
+        $REAL inside_value = field[inside_index[patch_antenna]];
+        $REAL outside_value = field[outside_index[patch_antenna]];
         $REAL real_weight = multiplier_real[frequency];
         $REAL imag_weight = multiplier_imag[frequency];
         inside_real[i] += real_weight * inside_value;
@@ -138,18 +138,18 @@ kernel void gather_time_domain_ntff(
     device const $REAL* field,
     device $REAL* surface_value,
     device $REAL* normal_derivative,
-    uint patch [[thread_position_in_grid]])
+    uint patch_antenna [[thread_position_in_grid]])
 """
     ),
     "func": Template(
         """
     $INDEX
-    if (patch < npatches) {
-        $REAL inside_value = field[inside_index[patch]];
-        $REAL outside_value = field[outside_index[patch]];
-        surface_value[patch] = ($REAL)0.5 * (inside_value + outside_value);
-        normal_derivative[patch] =
-            (outside_value - inside_value) / normal_spacing[patch];
+    if (patch_antenna < npatches) {
+        $REAL inside_value = field[inside_index[patch_antenna]];
+        $REAL outside_value = field[outside_index[patch_antenna]];
+        surface_value[patch_antenna] = ($REAL)0.5 * (inside_value + outside_value);
+        normal_derivative[patch_antenna] =
+            (outside_value - inside_value) / normal_spacing[patch_antenna];
     }
 """
     ),
@@ -238,8 +238,8 @@ kernel void deposit_time_domain_ntff(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < total) {
         int point = i / neffective_patches;
-        int patch = i - point * neffective_patches;
-        int source_patch = source_patch_index[patch];
+        int patch_antenna = i - point * neffective_patches;
+        int source_patch = source_patch_index[patch_antenna];
         int destination = sample_index - time_origin_steps[point]
             + integer_delay[i];
         $REAL time_derivative = coefficient_a * time_surface_a[source_patch]
@@ -265,9 +265,9 @@ kernel void deposit_time_domain_ntff(
     if (point < npoints) {
         int point_offset = point * neffective_patches;
         int output_offset = point * output_length;
-        for (int patch = 0; patch < neffective_patches; patch++) {
-            int i = point_offset + patch;
-            int source_patch = source_patch_index[patch];
+        for (int patch_antenna = 0; patch_antenna < neffective_patches; patch_antenna++) {
+            int i = point_offset + patch_antenna;
+            int source_patch = source_patch_index[patch_antenna];
             int destination = sample_index - time_origin_steps[point]
                 + integer_delay[i];
             $REAL time_derivative = coefficient_a * time_surface_a[source_patch]
@@ -330,11 +330,11 @@ def build_time_domain_ntff_kernel_source(c_real: str, backend: str = "cuda") -> 
         preamble = (
             _CUDA_FLOAT_ATOMIC_PREAMBLE if c_real == "float" else _CUDA_DOUBLE_ATOMIC_PREAMBLE
         )
-        gather_index = "int patch = blockIdx.x * blockDim.x + threadIdx.x;"
+        gather_index = "int patch_antenna = blockIdx.x * blockDim.x + threadIdx.x;"
         deposit_body = deposit_time_domain_ntff["func_cuda"].substitute(REAL=c_real)
     elif backend == "opencl":
         preamble = "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n" if c_real == "double" else ""
-        gather_index = "int patch = get_global_id(0);"
+        gather_index = "int patch_antenna = get_global_id(0);"
         deposit_body = deposit_time_domain_ntff["func_portable"].substitute(
             REAL=c_real, INDEX="int point = get_global_id(0);"
         )

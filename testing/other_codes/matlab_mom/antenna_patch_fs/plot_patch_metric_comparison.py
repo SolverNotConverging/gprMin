@@ -295,7 +295,7 @@ def plot_comparison(gprmax, matlab, metrics):
     axes[1, 1].legend()
 
     figure.suptitle(
-        "Rectangular patch: gprMax FDTD/KSIR vs MATLAB Antenna Toolbox MoM",
+        "Rectangular patch_antenna: gprMax FDTD/KSIR vs MATLAB Antenna Toolbox MoM",
         fontsize=15,
     )
     figure.savefig(OUTPUT_PNG, dpi=200)

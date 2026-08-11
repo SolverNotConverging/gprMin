@@ -59,7 +59,7 @@ def _readonly(array: npt.NDArray) -> npt.NDArray:
 
 @dataclass(frozen=True)
 class KSIRSurfaceFace:
-    """One non-overlapping midpoint-patch face of a component surface."""
+    """One non-overlapping midpoint-patch_antenna face of a component surface."""
 
     component: str
     face_id: str

@@ -83,8 +83,12 @@ Each ``#eigenmode_port`` supplies a unique port number, two corners of its
 cross-section, a direction pointing *into* the device, the modes to monitor,
 and its modal anchor policy. The first port points in ``+x`` and the second in
 ``-x`` because both arrows point toward the waveguide between them. The two
-physical guided modes are monitored at both ports. A mode that is below cutoff or otherwise cannot
-be normalized is marked invalid and is not plotted as a valid S-parameter.
+physical guided modes are monitored at both ports. A below-cutoff mode can
+still have a finite generalized modal-amplitude coefficient, so its S11/S21
+coefficient is retained when the decomposition is well conditioned. It is not
+a real-power wave: the separate power-wave validity mask remains false and
+its coefficient magnitude squared must not be interpreted as transmitted
+power.
 ``auto`` asks gprMax to choose one common set of modal solve frequencies for
 all automatic ports. These anchors cover both the requested band and the
 significant transition spectrum outside it, so identical port cross-sections
@@ -232,7 +236,7 @@ closed, staircased approximation of a pyramidal horn. The eigenmode port lies
 in the uniform feed and launches its fundamental TE10-like mode over
 8--12 GHz. One explicit 10 GHz anchor deliberately uses a fixed modal basis;
 the automatic waveform's small spectral tails extend below the guide cutoff,
-where broadband mode tracking would not be meaningful.
+where the mode cannot supply a propagating one-watt source anchor.
 
 The remaining commands request antenna results:
 
@@ -373,6 +377,18 @@ anchor as described in `Choosing frequency anchors`_. Always inspect the
 modal-field and excitation-spectrum figures from a geometry-only run before
 trusting broadband S-parameters.
 
+Candidate anchors feed two distinct banks. ``anchor_mode_valid`` selects the
+propagating, one-watt anchors used for TF/SF source synthesis and real-power
+waves. ``anchor_mode_reference_valid`` selects the successfully tracked
+monitor references and can additionally include evanescent anchors. For a
+generalized-only bin, the monitor selects the applicable contiguous
+evanescent reference run, converts those references to a common balanced E/H
+scale, interpolates E, H, and :math:`n_\mathrm{eff}` with the same weights,
+and balances the interpolated profile again. Propagating and evanescent
+anchors are never mixed across cutoff. This retains a physical evanescent E/H
+relation without using a non-propagating profile to drive the source or
+normalize power.
+
 S-parameter output details
 ==========================
 
@@ -438,9 +454,14 @@ This example requests 21 points from 4 to 6 GHz. The resulting
 contains one row per frequency,
 destination port, and destination mode. Source-port rows are modal S11
 results; port-2 rows are modal S21 results. Complex value, magnitude, dB
-magnitude, phase, coefficient magnitude squared, and validity are all
-included. Coefficient magnitude squared is not an independently attributable
-modal power fraction when the power matrix is non-diagonal.
+magnitude, phase, coefficient magnitude squared, generalized-coefficient
+validity, and power-wave validity are all included. The CSV ``valid`` column
+means that the modal decomposition and coefficient ratio are numerically
+usable. ``power_wave_valid`` additionally requires both participating modes
+to carry a valid forward real-power normalization. Thus a finite below-cutoff
+S21 can have ``valid=1`` and ``power_wave_valid=0``. Coefficient magnitude
+squared is not transmitted power below cutoff, and is not an independently
+attributable modal power fraction when the power matrix is non-diagonal.
 
 The same data are stored in HDF5:
 
@@ -459,6 +480,7 @@ The same data are stored in HDF5:
        s21_mode1 = receiver["S"][0]
        s21_mode2 = receiver["S"][1]
        valid_21_mode2 = receiver["valid_S"][1].astype(bool)
+       power_valid_21_mode2 = receiver["power_wave_valid_S"][1].astype(bool)
 
    s21_mode2_db = 20 * np.log10(np.abs(s21_mode2[valid_21_mode2]))
 
@@ -466,9 +488,19 @@ Arrays ``incident`` and ``outgoing`` have shape
 ``(number_of_modes, number_of_frequencies)`` and contain generalized modal
 travelling-wave coefficients. ``power_matrix`` stores the generally
 non-diagonal forward-wave power form and ``electric_cross_power_matrix``
-stores the total-field flux form, while ``valid``,
-``power_normalization_valid``, ``power_matrix_valid``, and ``valid_S`` identify
-usable results. Always apply the validity masks before plotting.
+stores the total-field flux form. ``decomposition_valid`` and ``valid_S``
+identify usable generalized coefficients and coefficient ratios.
+``power_normalization_valid``, ``power_matrix_valid``, and
+``power_wave_valid_S`` identify the stricter subset that can participate in
+real-power accounting. Apply ``valid_S`` when plotting modal amplitudes and
+``power_wave_valid_S`` before treating them as power waves. The retained
+``modal_power_waves`` representation name is a schema identifier; it does not
+override these per-bin validity distinctions. At anchor level,
+``anchor_mode_valid`` identifies the propagating source/power bank,
+``anchor_mode_reference_valid`` identifies the tracked monitor bank,
+``anchor_mode_propagating`` records the raw forward-power classification, and
+``anchor_balanced_power`` records each raw profile's positive balanced E/H
+power; its inverse square root supplies the monitor-reference scale.
 
 The no-argument
 :download:`plot_results.py <../../examples/features/eigenmode_ports/example_1_straight_waveguide/plot_results.py>`
@@ -538,12 +570,36 @@ the requested band and every significant excitation-spectrum bin, then gives
 that list to every automatic port. It phase-aligns adjacent profiles before
 interpolation. An overlap below 0.9 emits a warning.
 
+Automatic and explicit policies use the same physical rule at cutoff: only
+anchors with valid forward real power enter the propagating source/power
+bank. A successfully tracked non-propagating candidate remains eligible for
+the separate monitor-reference bank. Reference anchors are converted to the
+same finite balanced E/H normalization, but interpolation is branch-local: a
+generalized-only bin inside the solved candidate range uses one contiguous
+evanescent reference run and never blends that run with the propagating bank
+across cutoff. Outside the candidate range, endpoint extrapolation uses the
+nearest tracked reference anchor. E, H, and effective index are interpolated
+together within the selected run. Generalized modal
+coefficients can therefore remain finite and continuous while their
+power-wave validity is false.
+
+The difference is how the anchor list is managed. ``auto`` may trim a
+non-propagating outer guard and records a
+``*_nonpropagating_trimmed`` resolved policy. An explicit list is not silently
+replaced by a newly generated list: non-propagating candidates are excluded
+from the source/power bank but can remain in the monitor-reference bank, at
+least one propagating source anchor is still required, and disconnected
+retained propagating ranges remain an error. Supplying an explicit anchor
+below cutoff does not make it a one-watt incident wave or allow it to drive
+the TF/SF source.
+
 An overlap below 0.6 is ambiguous. If the failure is wholly within a spectral
 transition region outside the user-requested band, gprMax trims that outer
 guard and keeps the nearest successfully solved frequency as the endpoint
-anchor. Modal synthesis and decomposition use that endpoint profile for the
-remaining weak spectral tail, while every automatic port retains the same
-trimmed broadband anchor list. If tracking fails within the requested band,
+anchor. Both banks use that endpoint profile only across the tracking-trimmed
+weak spectral tail, because the rejected candidates are not reference-valid.
+Every automatic port retains the same trimmed candidate list. If tracking
+fails within the requested band,
 every automatic port
 instead uses one shared band-centre solve. The warning identifies the failed
 port, mode, frequencies, and overlap; results away from the single anchor may
@@ -554,8 +610,22 @@ asks for one explicit anchor. Adding anchors can resolve under-sampling, but it
 cannot make a true degeneracy, crossing, or artificial boundary mode safe.
 Inspect the profiles and remove non-physical modes before interpreting
 S-parameters. The HDF5 port group records ``RequestedAnchorPolicy``,
-``ResolvedAnchorPolicy``, and ``AnchorFrequencies`` so the final decision can
-be audited.
+``ResolvedAnchorPolicy``, and the candidate/mask data needed to audit both
+banks. ``AnchorFrequencies`` is the union of retained propagating
+source/power anchors, while ``ReferenceAnchorFrequencies`` is the union of
+retained monitor-reference anchors. ``CandidateAnchorFrequencies`` lists
+every solved candidate; combine it with ``anchor_mode_reference_valid`` to
+recover each mode's monitor-reference anchors rather than only their union.
+``anchor_balanced_power`` records the per-candidate balanced E/H power whose
+inverse square root puts reference profiles on the common normalization.
+
+At exact cutoff, the true forward and backward eigenmode solutions coalesce
+as the propagation constant tends to zero. A balanced-reference coefficient
+may have a finite limiting value, but it is not a unique physical separation
+into incident and outgoing eigenmodes exactly at cutoff. Treat bins at or
+extremely close to cutoff as conditioning-sensitive, inspect
+``decomposition_valid`` and the condition number, and verify convergence by
+moving the DFT grid and refining the modal anchors.
 
 Far-field output details
 ========================
@@ -652,7 +722,9 @@ the associated ``port_power`` diagnostics. Modal ports are identified by the
 ``modal_power_waves`` representation. Their incident/outgoing coefficients,
 mode indices, power matrix, and validity mask are repeated below
 ``port_power/modal_ports`` so the normalization can be audited without
-combining unrelated output groups.
+combining unrelated output groups. Only bins passing the real-power masks are
+used; finite generalized coefficients in a below-cutoff tail are retained for
+modal diagnostics but excluded from antenna-power normalization.
 
 Mathematical formulation
 ========================
@@ -682,8 +754,9 @@ gprMax uses two finite-difference frequency-domain eigenmode solvers:
 
 Both solvers operate directly on component-sampled Yee grids, accept complex
 permittivity and permeability, enforce PEC and PMC constraints at the
-corresponding component locations, select the passive positive effective-index
-branch, and return power-normalised fields for ``EigenmodeSource``.
+corresponding component locations, select the passive effective-index branch,
+and return either real-power-normalised or E/H-balanced modal fields. Only the
+propagating, real-power-normalised subset can be used by ``EigenmodeSource``.
 
 1D Scalar Solver for 2D Models
 ------------------------------
@@ -863,8 +936,11 @@ fields are in A/m.
 1D Normalisation and Phase Alignment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Each mode is normalised to one watt per metre of invariant-axis length. For
-TM, node-sampled ``E_a`` and ``H_t`` are first averaged onto transverse cells:
+Each propagating mode is normalised to one watt per metre of invariant-axis
+length. A non-propagating mode instead uses the positive E/H-balanced scale
+defined in `Mode Selection, Fields, and Power`_; it is retained
+as a monitor reference but is not a one-watt power wave. For TM, node-sampled
+``E_a`` and ``H_t`` are first averaged onto transverse cells:
 
 .. code-block:: text
 
@@ -876,9 +952,11 @@ For TE, ``E_t`` and ``H_a`` already share the cell locations:
 
    P_TE = 0.5 Re sum(E_t H_a*) dt
 
-If the initial power is negative, all magnetic fields are reversed before
-normalisation. Each complex mode is then phase-rotated so that the real-valued
-profiles used by the FDTD injection carry positive real-profile power.
+If a passive branch has negative real power along the solver's forward axis,
+the propagation-constant branch is reversed and its dependent fields are
+reconstructed before normalisation. Each complex mode is then phase-rotated
+to a deterministic real-profile convention used for tracking and, for a
+propagating source anchor, FDTD injection.
 
 1D gprMax Integration
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -1186,7 +1264,10 @@ satisfy the enforced constraints exactly.
 2D Normalisation and Phase Alignment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Modes are normalised to carry one watt of time-average power. Power is computed
+Propagating modes are normalised to carry one watt of time-average power.
+Non-propagating modes instead use the finite E/H-balanced scale defined in
+`Mode Selection, Fields, and Power`_; they can enter the tracked
+monitor-reference bank but not the source/power bank. Real power is computed
 from cell-centred transverse Poynting flux by averaging the staggered
 transverse fields onto local cells:
 
@@ -1194,10 +1275,12 @@ transverse fields onto local cells:
 
    P = 0.5 * Re integral((E_u * H_v* - E_v * H_u*) dA)
 
-If a mode initially carries negative power, the magnetic field is flipped
-before normalisation. After normalisation, each complex mode is phase-rotated
-so that its real-valued field profile carries positive real-profile power.
-This makes plotted and injected real fields easier to interpret.
+If a passive branch carries negative real power along the solver's forward
+axis, the propagation-constant branch is reversed and all dependent fields
+are reconstructed before normalisation. Each complex mode is then
+phase-rotated to a deterministic real-profile convention. This makes plotted,
+tracked, and (for propagating source anchors) injected fields easier to
+compare.
 
 2D gprMax Integration
 ^^^^^^^^^^^^^^^^^^^^^
@@ -1383,7 +1466,8 @@ refer to their final Yee-component locations. The workflow is:
 4. At each requested frequency, solve either the 1D scalar TM/TE problem for a
    2D FDTD model or the 2D full-vector problem for a 3D FDTD model.
 5. Reconstruct all modal E and H components, zero constrained degrees of
-   freedom, normalize power, and choose a consistent global phase.
+   freedom, apply either real-power or balanced E/H normalization, and choose
+   a consistent global phase.
 6. Map local modal arrays back to global x/y/z component slots. If the local
    coordinate mapping is left-handed, reverse H so that the Poynting direction
    remains correct.
@@ -1418,14 +1502,36 @@ For a 3D model, transverse modal power is evaluated on local cells as
 
 The native Yee components are averaged only as needed to place each product on
 the same transverse cell. For a 2D model, the equivalent line integral gives
-power per metre along the invariant axis. A negative initial power reverses
-all H components. The fields are then scaled to one watt in 3D or one watt per
-metre in 2D.
+power per metre along the invariant axis. If a passive branch initially has
+negative real power along the solver's forward axis, gprMax reverses its
+propagation-constant branch and reconstructs the dependent fields. A
+propagating mode is then scaled to one watt in 3D or one watt per metre in 2D.
+A non-propagating mode has no independent forward real power and instead
+receives a finite balanced E/H field scale for tracking and diagnostics; that
+scale is not a one-watt normalization.
 
 This normalization defines the scale of the modal profile at the source
 plane. Multiplying the source waveform amplitude by a factor multiplies both
 incident E and H by that factor; for a monochromatic mode, time-average power
-therefore scales with the square of the waveform amplitude.
+therefore scales with the square of the waveform amplitude only where the
+mode has valid real-power normalization.
+
+The one-watt propagating profiles form the source-synthesis and real-power
+bank. Modal monitoring also retains a second, tracked reference bank. Before
+a reference profile is used in a generalized-only bin, both its E and H
+fields are multiplied by the same factor so that
+
+.. math::
+
+   P_\mathrm{bal}=\frac{1}{4\eta_0}\int
+   \left(|\mathbf E_t|^2+\eta_0^2|\mathbf H_t|^2\right)\,dA=1
+
+(or the corresponding 2D line integral). This positive balanced quantity is
+a field-scale convention, not transported real power. Applying it to both
+propagating and evanescent monitor references prevents their original solver
+scales from introducing an artificial coefficient-scale jump. It does not
+license interpolating through the cutoff singularity: propagating and
+evanescent references remain in separate interpolation branches.
 
 The solver returns the positive-local-``w`` mode. A source requested in the
 negative global direction retains the electric profile and reverses the
@@ -1528,6 +1634,14 @@ Multiple explicit anchors stop with an error. With automatic anchors, an
 outer-guard failure trims the affected spectral tail globally; an in-band
 failure selects one shared single-frequency basis for every automatic port.
 
+Phase tracking is evaluated before the forward-power filter so that a solved
+non-propagating candidate can still diagnose and represent branch continuity.
+The forward-power filter produces the one-watt source/power mask, while every
+successfully tracked retained candidate produces the monitor-reference mask.
+A centre-only tracking fallback collapses both masks so that a rejected mode
+cannot re-enter monitor interpolation. Non-propagating reference anchors are
+never used by TF/SF source synthesis or treated as power waves.
+
 Spectrum and Piecewise-Linear Modal Interpolation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -1542,18 +1656,21 @@ The real waveform is sampled at the FDTD interval for the requested number of
 iterations. It is zero-padded to the next power of two at least twice as long
 as the simulation record, and transformed with ``numpy.fft.rfft``. For FFT
 bin :math:`m`, let its frequency and coefficient be :math:`f_m` and :math:`S_m`.
+Non-finite samples and a zero or non-finite spectrum are errors; gprMax does
+not replace the excitation with a zero-valued source.
 
-Piecewise-linear weights :math:`w_{k,m}` interpolate between surrounding
-anchors and satisfy
+For source synthesis, piecewise-linear weights :math:`w_{k,m}` interpolate
+between surrounding propagating source anchors and satisfy
 
 .. math::
 
    \sum_k w_{k,m}=1.
 
 Below or above the anchor range, the nearest endpoint receives weight one.
-This avoids a hard spectral truncation, although significant waveform energy
-outside the anchor range produces a warning because endpoint extrapolation may
-be inaccurate. The interpolated fields and propagation constant are
+This avoids a hard spectral truncation. Significant waveform energy outside
+the anchor range is governed by the spectrum-coverage policy: the default is
+an error, while an explicit ``warn`` policy permits endpoint extrapolation
+with a warning. The source-interpolated fields and propagation constant are
 
 .. math::
 
@@ -1579,9 +1696,10 @@ preserve unit power. gprMax constructs the cross-power matrix
    \left\{\sum_{k,l}w_{k,m}P_{kl}w_{l,m}\right\},
    \qquad a_m=\frac{1}{\sqrt{p_m}}.
 
-Thus the interpolated frequency-bin mode is renormalized rather than assuming
-that linear field weights retain one-watt power. Invalid or nearly zero power
-produces a warning and a finite fallback normalization.
+Thus the interpolated frequency-bin source mode is renormalized rather than
+assuming that linear field weights retain one-watt power. Invalid or nearly
+zero interpolated power is an error because a finite fallback would no longer
+represent the requested one-watt incident wave.
 
 Yee Time and Space Staggering
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1619,9 +1737,10 @@ The FDTD source update then sums the two I/Q bases over all anchors.
 
 DC and, for an even transform length, the Nyquist bin are self-conjugate. They
 cannot carry a general complex modal coefficient while preserving a real time
-record, so gprMax sets those bins to zero. Significant DC or Nyquist energy
-produces a warning. Broadband and single-frequency I/Q waveforms should
-therefore be band-limited and approximately zero mean.
+record, so gprMax discards those two bins. Significant DC or Nyquist energy
+produces a warning that the requested excitation has been changed. Use a
+band-limited waveform; for a finite frequency band,
+``EigenmodeExcitation(..., waveform='auto')`` synthesizes one automatically.
 
 TF/SF Injection into the FDTD Updates
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1688,6 +1807,21 @@ half a cell downstream so that both fields are on the total-field side. The
 final decomposition corrects either offset using each mode's propagation
 constant.
 
+The DFT-bin monitor basis is selected independently from source synthesis. A
+power-wave-valid bin uses the interpolated one-watt propagating bank. A
+generalized-only bin uses ``anchor_mode_reference_valid`` instead. It first
+selects the applicable contiguous evanescent reference run inside the solved
+candidate range; interpolation never crosses cutoff or spans disconnected
+evanescent runs. Outside that range, it uses the nearest tracked reference
+endpoint. Every selected anchor E/H pair is divided by the square root of its
+``anchor_balanced_power``, then E, H, and :math:`n_\mathrm{eff}` are
+interpolated with identical branch-local weights. The interpolated
+cell-centred E/H pair is balanced once more before its Gram matrices are
+formed. Keeping all three quantities on the same tracked branch is essential
+below cutoff, where modal admittance becomes reactive; interpolating only the
+propagation constant while retaining a propagating endpoint E/H pair would
+not correctly separate forward and backward amplitudes at one plane.
+
 For several requested modes, independent overlaps are insufficient when the
 discrete profiles are not exactly orthogonal. At each frequency gprMax forms
 electric and magnetic Gram matrices,
@@ -1721,11 +1855,23 @@ device, the single-source scattering result is
 
 Consequently the explicitly numbered source port gives S11 and a downstream
 multimode port gives one S21 result for every requested destination mode.
-Ill-conditioned modal systems and bins with negligible incident spectrum are
-retained in the output but marked invalid. Decompositions must satisfy both
-the absolute condition cap :math:`\kappa<10^{10}` and the precision-aware
-budget :math:`\kappa\epsilon<10^{-3}`. The small Gram systems are solved in
-complex128 even when the stored FDTD fields and Gram entries use complex64.
+These are generalized modal-amplitude ratios. Ill-conditioned modal systems
+and bins with negligible incident spectrum are retained in the output but
+marked invalid by ``decomposition_valid`` or ``valid_S``. Decompositions must
+satisfy both the absolute condition cap :math:`\kappa<10^{10}` and the
+precision-aware budget :math:`\kappa\epsilon<10^{-3}`. The small Gram systems
+are solved in complex128 even when the stored FDTD fields and Gram entries use
+complex64.
+
+A below-cutoff mode can therefore produce finite incident/outgoing
+coefficients and a continuous S21 amplitude. In a uniform guide its forward
+amplitude varies as :math:`\exp(-\alpha L)` for
+:math:`\beta=-j\alpha`; this is the attenuation of a field coefficient, not
+the transport of real power by an isolated evanescent wave. At exact cutoff,
+:math:`\beta=0` and the true forward/backward eigenmode basis coalesces. An
+E/H-balanced reference may approach a finite limiting coefficient there, but
+the directional decomposition is not unique and must be treated as
+conditioning-sensitive.
 
 The same Gram matrices define the Hermitian forward-wave power form
 
@@ -1738,7 +1884,10 @@ The implementation symmetrizes :math:`W` against round-off and checks that it
 is finite and positive semidefinite. Keeping the off-diagonal terms is
 essential for degenerate, nearly degenerate, or merely non-orthogonal
 finite-grid profiles. Individual coefficient magnitudes therefore are not
-additive modal powers.
+additive modal powers. A pure evanescent mode has zero independent real power,
+so its generalized coefficient may be valid while
+``power_normalization_valid`` and ``power_wave_valid_S`` are false. In
+particular, :math:`|S|^2` must not be used as an evanescent power fraction.
 
 For net accepted power, let :math:`x=a+b` be the total electric coefficient
 and :math:`y=a-b` the co-located total magnetic coefficient after the
@@ -1757,7 +1906,10 @@ The externally driven incident power contains only the excitation mode at the
 single source. Passive modal receivers have zero generator incident power,
 but their signed accepted power remains in the multiport balance used for
 gain. This distinction makes realized gain use launched source power while
-gain uses the net power accepted by the radiating structure.
+gain uses the net power accepted by the radiating structure. The power
+adapter applies the power-normalization and power-matrix masks, so generalized
+below-cutoff coefficients do not enter gain, accepted-power, or energy-balance
+normalization.
 
 Understanding Lossy-Mode Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1787,10 +1939,16 @@ For reliable broadband excitation:
 * place frequency anchors across the significant waveform spectrum;
 * add anchors near rapid dispersion, cut-off, avoided crossings, or strong
   profile changes;
+* treat a below-cutoff balanced-reference S trace as a generalized amplitude
+  and use ``power_wave_valid_S`` before making any power claim;
+* move the DFT grid and repeat the solve when a requested bin lies at or very
+  close to cutoff, where the true forward/backward basis is ill-conditioned;
 * inspect adjacent-anchor overlaps below 0.9 rather than assuming a fixed mode
   index tracks the same physical branch, and use a single-frequency solve when
   an overlap is below the hard 0.6 limit;
-* avoid significant DC and Nyquist content when I/Q synthesis is required;
+* use a band-limited waveform when I/Q synthesis is required; significant DC
+  and Nyquist bins produce a warning and are discarded, while ``waveform='auto'``
+  synthesizes a suitable waveform for a finite frequency band;
 * refine the FDTD grid until both the modal effective index and field profile
   converge;
 * keep the source plane in a longitudinally uniform section of the guide so

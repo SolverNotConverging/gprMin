@@ -530,9 +530,10 @@ The automatic excitation is a finite real band-pass pulse with independently
 adapted Gaussian-smoothed lower and upper edges. It is placed at the earliest
 causal time that retains its significant temporal support, maximizing the
 remaining propagation and ring-down interval. A custom ``Waveform`` ID can be
-supplied instead. gprMax checks its exact sampled spectrum and rejects
-significant DC/Nyquist content or more than one percent power outside the
-declared band, with a recommendation to use ``waveform='auto'``.
+supplied instead. gprMax checks its exact sampled spectrum, warns and discards
+significant DC/Nyquist bins, and rejects more than one percent power outside
+the declared band. Use a band-limited waveform, or select ``waveform='auto'``
+to synthesize one automatically for a finite frequency band.
 ``plot_waveform`` independently controls the single excitation waveform/DFT
 figure. ``True`` writes it, ``False`` suppresses it, and the default ``None``
 writes it only for geometry-only runs. Each port's ``plot_fields`` setting

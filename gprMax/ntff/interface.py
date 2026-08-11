@@ -1431,7 +1431,7 @@ class NTFFCompiledOutputs:
             group.attrs["terminal_decay_window_samples"] = result.terminal_decay_window_samples
             group.attrs[
                 "retarded_window_policy"
-            ] = "only bins supported by every integration-surface patch are stored"
+            ] = "only bins supported by every integration-surface patch_antenna are stored"
             group["times"] = result.times
             group["theta"] = result.theta
             group["phi"] = result.phi

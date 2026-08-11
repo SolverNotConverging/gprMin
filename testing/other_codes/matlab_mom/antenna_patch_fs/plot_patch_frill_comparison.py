@@ -1,4 +1,4 @@
-"""Compare MATLAB, voltage-gap, and magnetic-frill patch-antenna results."""
+"""Compare MATLAB, voltage-gap, and magnetic-frill patch_antenna-antenna results."""
 
 import json
 from pathlib import Path
@@ -147,7 +147,7 @@ def main():
         axis.set_title(title, pad=18)
         axis.grid(alpha=0.4)
     axes[0].legend(loc="lower center", bbox_to_anchor=(1.08, -0.22), ncol=2, frameon=False)
-    fig.suptitle("Rectangular patch at 2.37 GHz — feed-model comparison")
+    fig.suptitle("Rectangular patch_antenna at 2.37 GHz — feed-model comparison")
     fig.tight_layout(rect=(0, 0.07, 1, 0.96))
     pattern_path = RESULTS_DIR / "patch_frill_pattern_comparison.png"
     fig.savefig(pattern_path, dpi=220, bbox_inches="tight")
@@ -215,7 +215,7 @@ def main():
         )
     axes[0].axhline(-10, color="0.45", linewidth=1, linestyle=":")
     axes[0].set_ylabel(r"$|S_{11}|$ (dB)")
-    axes[0].set_title(r"Rectangular patch — 50 $\Omega$ port")
+    axes[0].set_title(r"Rectangular patch_antenna — 50 $\Omega$ port")
     axes[0].legend()
     axes[0].grid(alpha=0.35)
     axes[1].set_xlabel("Frequency (GHz)")
@@ -249,7 +249,7 @@ def main():
         )
     axes[0].axhline(50, color="0.45", linewidth=1, linestyle=":")
     axes[0].set_ylabel(r"Resistance, Re{$Z_\mathrm{in}$} ($\Omega$)")
-    axes[0].set_title("Rectangular patch — input impedance")
+    axes[0].set_title("Rectangular patch_antenna — input impedance")
     axes[0].legend()
     axes[0].grid(alpha=0.35)
     axes[1].axhline(0, color="0.45", linewidth=1, linestyle=":")
