@@ -268,6 +268,7 @@ else:
             "typing_extensions",
         ],
         extras_require={
+            "gui": ["PySide6>=6.7", "pyvista>=0.46", "pyvistaqt>=0.11", "vtk>=9.4"],
             "cuda": ["pycuda; sys_platform != 'darwin'"],
             "opencl": ["pyopencl"],
             "metal": ["pyobjc-framework-Metal; sys_platform == 'darwin'"],

@@ -23,6 +23,7 @@ from importlib.metadata import metadata, requires
 import pytest
 
 OPTIONAL_REQUIREMENTS = {
+    "gui": ("pyside6", "pyvista", "pyvistaqt", "vtk"),
     "mpi": ("mpi4py",),
     "mpi-fractals": ("mpi4py", "mpi4py-fft"),
     "cuda": ("pycuda",),
