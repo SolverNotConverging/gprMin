@@ -57,8 +57,9 @@ supports 2D TM, 2D TE, and full 3D models, with fixed-profile or broadband
 modal excitation. An experimental virtual waveguide can replace the
 main-grid continuation behind an internal modal plane. Its bidirectionally
 coupled auxiliary Yee grid absorbs reflected guided modes and places the
-impressed source outside a closed antenna NTFF surface. CPU virtual guides
-also support 2D TE/TM and passive surface-impedance walls, including exact
+impressed source outside a closed antenna NTFF surface. CPU and CUDA virtual
+guides also support 2D TE/TM with closed NTFF contours. CPU additionally
+supports passive surface-impedance walls, including exact
 voxel-face PMC through infinite surface resistance. See :ref:`eigenmode`
 for the recommended workflow, limitations, antenna coupling, and mathematical
 formulation in :doc:`eigenmode_port_theory`. Degenerate mode groups can be
@@ -93,6 +94,11 @@ optimisation requires separate model builds and is described in
 
 Near-to-far-field transformations
 =================================
+
+Two-dimensional TE and TM models support :ref:`closed contour transforms
+<ntff-2d>` with Ramahi/KSIR and conventional equivalent-current formulations,
+producing one-dimensional angular patterns with cylindrical normalization.
+Both use CPU/OpenMP, CUDA, OpenCL, Metal and MPI acceleration paths.
 
 gprMax provides two complementary surface formulations. The Kirchhoff
 surface-integral representation (KSIR) reconstructs finite-distance fields as

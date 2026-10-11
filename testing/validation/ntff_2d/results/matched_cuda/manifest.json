@@ -1,0 +1,18 @@
+{
+  "status": "failed",
+  "backend": "cuda",
+  "precision": "double",
+  "python": "3.13.15",
+  "git_commit": "e68d228d7587b3021ace1454a6e83d2fd3260323",
+  "cases": [],
+  "source_sha256": {
+    "gprMax/ntff/contour.py": "3cfbfaa95bfb98f1f270989a72b48496668998177dd37ba24fef7ebe58f5ac34",
+    "gprMax/virtual_waveguide.py": "80d8142531e2f896de408edb408520f92b5b1d0ee4fb54c01fe68ba430e29497",
+    "gprMax/virtual_waveguide_2d.py": "d7f2992585cd486727929c9db70ca489bb3c85b130442f4a875545267c7fdbbf",
+    "gprMax/cuda_opencl/knl_virtual_waveguide_2d.py": "0da17dbba05c5610a46039a509dad6da12c38d7da2a00f6955b85f44a0b84ed2",
+    "gprMax/updates/cuda_updates.py": "68a064a421f883d0fd17a1531cf9eb07312cd81a57dbc8925fe539ac762e3b7c",
+    "testing/validation/ntff_2d/matched_antenna.py": "9fc4384697002e1ce94b6efb6a904cb39d876e6436f3650f6c1b467a2b31322a",
+    "C:\\Users\\Traveler\\PycharmProjects\\gprMin\\testing\\validation\\ntff_2d\\validate_matched_antenna.py": "dd46a868d9054bcb8c811d52c960debdaa17bc50a69fd0cc18ab1e4301d2c7f4"
+  },
+  "error": "ValueError('A virtual-waveguide aperture must lie in a locally uniform guide: cell materials or interior Yee-component IDs differ across the x=28 split.')"
+}

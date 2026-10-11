@@ -758,6 +758,91 @@ def _ksir_array_points(p1, p2, dl, real_dtype):
     return _ksir_points(np.stack(mesh, axis=-1).reshape(-1, 3), real_dtype)
 
 
+class NTFFContour(OutputUserObject):
+    """Closed 2-D TE/TM contour producing frequency-by-angle far fields.
+
+    ``p1`` and ``p2`` bound a rectangle in the simulation plane (use ``inf``
+    on the invariant axis). Angles are degrees from +u toward +v, with
+    (u, v, invariant) right-handed: yz for x, zx for y, xy for z.
+    Fields use cylindrical sqrt(r) exp(+ikr) normalization. Both KSIR and
+    equivalent currents use CPU/OpenMP, CUDA, OpenCL, Metal or MPI collection.
+    """
+
+    @property
+    def order(self):
+        return 10
+
+    @property
+    def hash(self):
+        return "#ntff_contour"
+
+    def __init__(
+        self, p1, p2, id, frequencies, angles=None, window="rectangular", origin=None, formulation="equivalent_current"
+    ):
+        super().__init__(
+            p1=p1,
+            p2=p2,
+            id=id,
+            frequencies=frequencies,
+            angles=angles,
+            window=window,
+            origin=origin,
+            formulation=formulation,
+        )
+        self.p1, self.p2, self.ID = p1, p2, id
+        self.frequencies, self.angles, self.window, self.origin = frequencies, angles, window, origin
+        self.formulation = formulation
+        self._monitor = None
+
+    @property
+    def result(self):
+        if self._monitor is None:
+            raise RuntimeError("NTFFContour result is available after the simulation finishes")
+        return self._monitor.result
+
+    def build(self, model, grid):
+        from gprMax.ntff.contour import NTFFContourMonitor
+
+        if isinstance(grid, SubGridBaseGrid):
+            raise ValueError("NTFFContour must be defined on the main grid")
+        if config.sim_config.general["solver"] not in ("cpu", "cuda", "opencl", "metal"):
+            raise ValueError("NTFFContour requires CPU, CUDA, OpenCL, or Metal")
+        if config.sim_config.args.geometry_fixed or getattr(config.sim_config, "study", None) is not None:
+            raise ValueError("NTFFContour does not yet support geometry reuse or studies")
+        if mode2d_geometry(config.get_model_config().mode) is None:
+            raise ValueError("NTFFContour requires a 2-D TE or TM model")
+        geometry = mode2d_geometry(config.get_model_config().mode)
+        if config.sim_config.mpi and config.sim_config.mpi[geometry.invariant_axis] != 1:
+            raise ValueError("NTFFContour MPI decomposition must not split the invariant axis")
+        validate_identifier("NTFF contour ID", self.ID)
+        if any(getattr(monitor, "name", None) == self.ID for monitor in grid.ntff_monitors):
+            raise ValueError("NTFF contour ID is already in use")
+        uip = self._create_uip(grid)
+        lower, upper = uip.check_output_object_bounds(
+            uip.resolve_inf_point(self.p1, role="lower"),
+            uip.resolve_inf_point(self.p2, role="upper"),
+            self.params_str(),
+        )
+        if hasattr(grid, "global_size"):
+            lower, upper = grid.local_to_global_coordinate(lower), grid.local_to_global_coordinate(upper)
+        self._monitor = NTFFContourMonitor(
+            grid,
+            config.get_model_config().mode,
+            lower,
+            upper,
+            self.frequencies,
+            np.arange(360) if self.angles is None else self.angles,
+            self.ID,
+            self.window,
+            self.origin,
+            self.formulation,
+            config.sim_config.dtypes["float_or_double"],
+            config.get_model_config().ompthreads,
+            config.sim_config.general["solver"],
+        )
+        grid.ntff_monitors.append(self._monitor)
+
+
 class NTFFSurface(OutputUserObject):
     """Define a reusable Yee-aligned field-transformation surface."""
 

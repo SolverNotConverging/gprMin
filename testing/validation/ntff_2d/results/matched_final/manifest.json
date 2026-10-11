@@ -1,0 +1,190 @@
+{
+  "status": "passed",
+  "backend": "cuda",
+  "precision": "double",
+  "python": "3.13.15",
+  "git_commit": "e68d228d7587b3021ace1454a6e83d2fd3260323",
+  "cases": [
+    {
+      "case": "antenna_TE_0.001",
+      "method": "ksir",
+      "spacing": 0.001,
+      "incident_power_relative_error": 2.637323734044905e-05,
+      "efficiency": 0.9695803192462832,
+      "reflection_magnitude": 0.12628696982410334,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TE_0.001",
+      "method": "equivalent_current",
+      "spacing": 0.001,
+      "incident_power_relative_error": 2.637323734044905e-05,
+      "efficiency": 0.9739477572433526,
+      "reflection_magnitude": 0.12628696982410334,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TE_0.0005",
+      "method": "ksir",
+      "spacing": 0.0005,
+      "incident_power_relative_error": 2.7619798770306403e-06,
+      "efficiency": 0.9923895193609182,
+      "reflection_magnitude": 0.12176775278705526,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TE_0.0005",
+      "method": "equivalent_current",
+      "spacing": 0.0005,
+      "incident_power_relative_error": 2.7619798770306403e-06,
+      "efficiency": 0.9935018088030116,
+      "reflection_magnitude": 0.12176775278705526,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TE_0.00025",
+      "method": "ksir",
+      "spacing": 0.00025,
+      "incident_power_relative_error": 1.860474624360009e-06,
+      "efficiency": 0.9981887232078922,
+      "reflection_magnitude": 0.12032423085350422,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TE_0.00025",
+      "method": "equivalent_current",
+      "spacing": 0.00025,
+      "incident_power_relative_error": 1.860474624360009e-06,
+      "efficiency": 0.998435680717262,
+      "reflection_magnitude": 0.12032423085350422,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "analytical_TE_single",
+      "method": "ksir",
+      "complex_far_field_relative_error": 0.00011434835703474764
+    },
+    {
+      "case": "analytical_TE_single",
+      "method": "equivalent_current",
+      "complex_far_field_relative_error": 0.0001456664528378955
+    },
+    {
+      "case": "analytical_TE_pair",
+      "method": "ksir",
+      "complex_far_field_relative_error": 0.00024904081332442833
+    },
+    {
+      "case": "analytical_TE_pair",
+      "method": "equivalent_current",
+      "complex_far_field_relative_error": 0.0002990224704948204
+    },
+    {
+      "case": "antenna_TM_0.001",
+      "method": "ksir",
+      "spacing": 0.001,
+      "incident_power_relative_error": 0.0064621555247219575,
+      "efficiency": 0.958654525907012,
+      "reflection_magnitude": 0.21529068927301215,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TM_0.001",
+      "method": "equivalent_current",
+      "spacing": 0.001,
+      "incident_power_relative_error": 0.0064621555247219575,
+      "efficiency": 1.0052104032974034,
+      "reflection_magnitude": 0.21529068927301215,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TM_0.0005",
+      "method": "ksir",
+      "spacing": 0.0005,
+      "incident_power_relative_error": 0.000341808417415157,
+      "efficiency": 0.986417398848692,
+      "reflection_magnitude": 0.20830499014128642,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TM_0.0005",
+      "method": "equivalent_current",
+      "spacing": 0.0005,
+      "incident_power_relative_error": 0.000341808417415157,
+      "efficiency": 0.9973633420890532,
+      "reflection_magnitude": 0.20830499014128642,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TM_0.00025",
+      "method": "ksir",
+      "spacing": 0.00025,
+      "incident_power_relative_error": 0.003283365256476989,
+      "efficiency": 0.992442083530199,
+      "reflection_magnitude": 0.20988313246238222,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "antenna_TM_0.00025",
+      "method": "equivalent_current",
+      "spacing": 0.00025,
+      "incident_power_relative_error": 0.003283365256476989,
+      "efficiency": 0.9939163521417292,
+      "reflection_magnitude": 0.20988313246238222,
+      "power_valid": true,
+      "gain_valid": true,
+      "finite": true
+    },
+    {
+      "case": "analytical_TM_single",
+      "method": "ksir",
+      "complex_far_field_relative_error": 0.0002888785288797492
+    },
+    {
+      "case": "analytical_TM_single",
+      "method": "equivalent_current",
+      "complex_far_field_relative_error": 0.00024337676805998327
+    },
+    {
+      "case": "analytical_TM_pair",
+      "method": "ksir",
+      "complex_far_field_relative_error": 0.00017434529091794464
+    },
+    {
+      "case": "analytical_TM_pair",
+      "method": "equivalent_current",
+      "complex_far_field_relative_error": 0.00010453641281384728
+    }
+  ],
+  "source_sha256": {
+    "gprMax/ntff/contour.py": "acc61c57ae960ccdecff7d437d7d48c4cf56668e68b625b907d624e114bf0763",
+    "gprMax/virtual_waveguide.py": "c3a446a29c9c099bc2403b809c6d2ad4411f8807337f36641a3bb074d9521041",
+    "gprMax/virtual_waveguide_2d.py": "bcaf7e4a47270b2ce148a9da98a7474f9ad808697953fb2ec66975ee0c6eb94c",
+    "gprMax/cuda_opencl/knl_virtual_waveguide_2d.py": "dff03edad80134533102fe7caddaf86d8e387fc94c742961965de649b01e80bf",
+    "gprMax/updates/cuda_updates.py": "85bd1a93bc0eccc38db5f9811704da7861d47e5e46950ed8d4c5951becb31932",
+    "testing/validation/ntff_2d/matched_antenna.py": "933def342fb23b49164da70e56388e496207aa9925b2da9d67492a7e5cb99239",
+    "C:\\Users\\Traveler\\PycharmProjects\\gprMin\\testing\\validation\\ntff_2d\\validate_matched_antenna.py": "ac64c0d488f057cb2371d14ca09e84af21bda4aa570b0cd5025116391ba1235a"
+  }
+}

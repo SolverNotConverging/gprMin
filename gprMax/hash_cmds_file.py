@@ -252,6 +252,7 @@ def check_cmd_names(processedlines, checkessential=True):
             "#network_port",
             "#snapshot",
             "#ntff_surface",
+            "#ntff_contour",
             "#ntff_frequency",
             "#ntff_layered_background",
             "#ntff_layered_frequency",

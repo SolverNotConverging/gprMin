@@ -1,4 +1,4 @@
-"""CPU aperture coupling on the live plane of a reduced Yee grid.
+"""Reference CPU aperture coupling on the live plane of a reduced Yee grid.
 
 The invariant storage layers are never treated as physical PEC side walls.
 All operations are vectorized along the one physical transverse coordinate.
@@ -27,6 +27,14 @@ def _geometry(guide):
     return transverse, lower, count, aperture
 
 
+def _rear(guide, selection):
+    # Detach only the neighbouring Yee layer. A full rear prism would
+    # suppress exterior radiation around a finite feed. The boundary must
+    # be the same whether or not a field monitor has been requested.
+    lower, upper = guide.plane_index - 1, guide.plane_index + 2
+    return slice(max(selection.start, lower), min(selection.stop, upper))
+
+
 def couple_magnetic(guide):
     transverse, lower, count, aperture = _geometry(guide)
     normal, plane = guide.normal_axis, guide.plane_index
@@ -43,7 +51,7 @@ def couple_magnetic(guide):
             if guide.direction_sign > 0
             else slice(plane + int(axis == normal), normal_stop)
         )
-        main[rear, lower : lower + stop] = 0
+        main[_rear(guide, rear), lower : lower + stop] = 0
 
 
 def couple_electric(guide):
@@ -89,4 +97,4 @@ def couple_electric(guide):
             if guide.direction_sign > 0
             else slice(plane + 1, normal_stop)
         )
-        main[rear, lower : lower + stop] = 0
+        main[_rear(guide, rear), lower : lower + stop] = 0

@@ -1289,6 +1289,9 @@ same driven-state reflection data and drive weights. Use an
 NTFF field-transformation output
 --------------------------------
 
+Two-dimensional outputs use the separate ``/ntff_contours/<id>/`` namespace;
+see :ref:`ntff-2d` for its datasets and per-unit-length normalization.
+
 Reusable KSIR and equivalent-current outputs are stored in the normal model
 file under their surface and transform IDs:
 

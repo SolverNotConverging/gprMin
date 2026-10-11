@@ -1647,6 +1647,11 @@ components in a snapshot cell.
 
 Reusable NTFF integration surface
 ---------------------------------
+.. autoclass:: gprMax.user_objects.cmds_output.NTFFContour
+
+See :ref:`ntff-2d` for TE/TM contour geometry, both formulations, acceleration,
+angular conventions and cylindrical-wave normalization.
+
 .. autoclass:: gprMax.user_objects.cmds_output.NTFFSurface
 
 The reusable Python interface has a one-to-one mapping to the supported NTFF
@@ -1658,6 +1663,8 @@ hash commands:
 
     * - Python class
       - Hash command
+    * - ``NTFFContour`` (2-D TE/TM)
+      - ``#ntff_contour``
     * - ``NTFFSurface``
       - ``#ntff_surface``
     * - ``KSIRFrequencyTransform``

@@ -20,6 +20,7 @@ gprMax User Guide
 
     input_hash_cmds
     input_api
+    ntff_2d
     sources_ports
     studies
     material_databases
