@@ -389,6 +389,15 @@ class SimulationConfig:
         #     progressbars when logging level is greater than info (20)
         #     or when specified by the user.
 
+        from gprMax.dft_convergence import DFTConvergenceSettings
+
+        self.dft_convergence = DFTConvergenceSettings(
+            enabled=getattr(args, "dft_convergence", True),
+            rtol=getattr(args, "dft_rtol", 1e-3),
+            check_interval=getattr(args, "dft_check_interval", 0),
+            stable_checks=getattr(args, "dft_stable_checks", 3),
+            minimum_time=getattr(args, "dft_min_time", 0.0),
+        )
         if args.show_progress_bars and args.hide_progress_bars:
             logger.error("You cannot both show and hide progress bars.")
             raise ValueError

@@ -162,7 +162,7 @@ where :math:`c` is the speed of light. In gprMax the equality is used to determi
 #time_window:
 -------------
 
-Allows you to specify the total required simulated time. The syntax of the command is:
+Specifies the maximum simulated time. Eligible pulsed runs stop earlier when all available DFT bins converge; runs without DFT bins use the full window. See :doc:`dft_convergence` for controls and supported cases. Use ``--no-dft-convergence`` to require a fixed-duration record. The syntax of the command is:
 
 .. code-block:: none
 

@@ -29,6 +29,7 @@ gprMax User Guide
     impedance_surfaces_theory
     eigenmode_port_theory
     output
+    dft_convergence
 
 .. toctree::
     :maxdepth: 2

@@ -737,6 +737,12 @@ class Model:
             grid.reset_fields()
 
     def write_output_data(self):
+        from gprMax.dft_convergence import completed_output_window
+
+        with completed_output_window(self.G):
+            self._write_output_data()
+
+    def _write_output_data(self):
         """Writes output data, i.e. field data for receivers and snapshots to
         file(s).
         """
@@ -870,6 +876,12 @@ class Model:
 
         # Run solver
         solver.solve(iterator)
+
+        if hasattr(iterator, "close"):
+            if self.G.completed_iterations < self.iterations:
+                iterator.n = self.G.completed_iterations
+                iterator.set_postfix_str("DFT converged")
+            iterator.close()
 
         # Write output data, i.e. field data for receivers and snapshots to file(s)
         self.write_output_data()
