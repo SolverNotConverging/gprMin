@@ -225,7 +225,7 @@ reference slots, transformations, and residuals before final reordering.
 Recovery uses field history, without TE/TM labels or spatial symmetry tests.
 A persistent four-dimensional degeneracy with no resolved neighboring
 subgroups remains one tracking group. There is no imposed two-mode limit.
-Automatic detection of the native C4v or C2v symmetry can subsequently
+Automatic detection of a native transverse-grid symmetry can subsequently
 decompose its source span into irreducible blocks. Detection uses sampled
 materials and boundary masks at every anchor, followed by modal closure,
 power, continuity, and residual checks. If no decomposition passes, the
@@ -965,7 +965,7 @@ All accepted transformations act identically on E and H and pass the mixed
 eigen-residual, available reconstructed-field residual, power checks, and
 the coefficient solver's precision budget for the complete power-wave
 measurement bank.
-Automatic selection can try C2v after a C4v trial fails, then retain the
+Automatic selection can try supported subgroups after a C4v trial fails, then retain the
 fallback basis. Symmetry selection is enabled by automatic tracking and is
 skipped by legacy tracking.
 The HDF5 diagnostics record which basis was used at each group and anchor.
@@ -1453,3 +1453,28 @@ and its original field archive. Numerical regression fixtures remain under
 Check the independent analytical fields and related tracking code with::
 
    python -m pytest tests/test_tracking_analytical_references.py tests/test_eigenmode_expanded_validation.py tests/test_waveguide_modal_profiles.py tests/test_cylindrical_modal_profiles.py
+
+
+Operation-based subgroup detection
+----------------------------------
+
+See :ref:`tracking-native-symmetry-groups` for the complete illustrated subgroup
+catalogue. The geometry stage certifies six primitive operations once per
+anchor and intersects the accepted operations across the bank. Group membership
+is then determined by generator inclusion. Identity is implicit; a quarter
+turn generates its inverse, so a separate three-quarter-turn test is redundant.
+The half turn is checked independently to recognize C2 when quarter turns fail.
+
+For each newly supported abelian subgroup the complex irreducible blocks are
+singlets. The transformed generator columns must equal the corresponding
+character times the channel basis vector within the existing numerical
+tolerance. Cs characters are +1 and -1, C2 characters are +1 and -1, and C4
+characters are +1, -1, +i, -i. The diagonal C2v variant uses the two diagonal
+mirror characters. Signed polar-E and axial-H actions are also used for SIBC
+certification. Scalar material values are permuted without discarding their
+complex parts; symmetry of loss is required as well as symmetry of real parts.
+
+The symmetry pass respects the preceding longitudinal/gradient candidate
+separation. A subgroup cannot recombine distinct validated candidates merely
+to obtain symmetry eigenvectors. If a candidate is not invariant under an
+operation, that trial is rejected and the validated fallback is preserved.

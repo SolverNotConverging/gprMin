@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from gprMax.eigenmode_symmetry import detect_symmetry, align_symmetry_subspaces
+from gprMax.eigenmode_symmetry import detect_symmetry, align_symmetry_subspaces, NATIVE_SYMMETRIES
 from gprMax.eigenmode_tracking import align_groups, _power
 from gprMax.sources import EigenmodeSource
 from testing.eigenmode_support.subspaces.expanded_mode_tracking import fd_solver
@@ -170,7 +170,7 @@ def test_failed_automatic_trials_do_not_change_fallback_fields(monkeypatch):
         assert owner.symmetry_diagnostics==[]
         record=owner.symmetry_detection['groups'][0]
         assert record['applied']=='power_whitening'
-        assert [a['symmetry'] for a in record['attempts']]==['c4v','c2v']
+        assert [a['symmetry'] for a in record['attempts']]==list(NATIVE_SYMMETRIES)
 
 
 def test_rejected_c4v_trial_can_use_certified_c2v(monkeypatch):

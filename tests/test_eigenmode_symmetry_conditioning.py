@@ -29,8 +29,16 @@ def unequal_longitudinal_basis():
 
 
 @pytest.mark.parametrize('dtype', [np.complex64, np.complex128])
-def test_axis_selection_falls_back_when_monitor_precision_requires_it(monkeypatch, dtype):
+@pytest.mark.parametrize('subgroups', [False, True])
+def test_axis_selection_falls_back_when_monitor_precision_requires_it(monkeypatch, dtype, subgroups):
     blocks, records = unequal_longitudinal_basis()
+    if not subgroups:
+        detect = symmetry.detect_symmetry
+        def axis_candidates(solvers):
+            result = detect(solvers)
+            result['candidates'] = [s for s in result['candidates'] if s in ('c4v', 'c2v')]
+            return result
+        monkeypatch.setattr(symmetry, 'detect_symmetry', axis_candidates)
     # Exercise the real transactional selection with a directional result from
     # unequal longitudinal norms, isolating it from a particular guide geometry.
     monkeypatch.setattr(symmetry, 'axis_sensitive_blocks', lambda *a, **kw: (blocks, records))
@@ -39,7 +47,12 @@ def test_axis_selection_falls_back_when_monitor_precision_requires_it(monkeypatc
         solver = fd_solver(20e9, (16,16), .02/16, (2,2,2), count=8)
         owner, grid, e, h = aligned_bank([solver], (5,6))
         selected = owner.symmetry_detection['groups'][0]
-        if dtype == np.complex64:
+        if dtype == np.complex64 and subgroups:
+            # A weaker certified subgroup can avoid the ill-conditioned axis
+            # selection while still passing the actual monitor checks below.
+            assert selected['applied'] == 'c2v_diagonal'
+            assert all('precision budget' in trial['reason'] for trial in selected['attempts'])
+        elif dtype == np.complex64:
             assert selected['applied'] == 'longitudinal_gradient'
             assert all('precision budget' in trial['reason'] for trial in selected['attempts'])
             assert owner.symmetry_diagnostics == []

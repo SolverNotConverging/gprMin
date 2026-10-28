@@ -712,6 +712,9 @@ common to the bank.
 * **C2v** includes a half turn and two axis reflections, as for a centered
   rectangle. It can be available when quarter-turn symmetry is absent.
 
+The operation-based detection pipeline and all supported groups are illustrated
+in :ref:`tracking-native-symmetry-groups`.
+
 The geometry test identifies possible symmetries. The field test then checks
 whether rotating or reflecting a candidate group keeps its fields inside
 that same group and preserves their validity. This is what **certified**
@@ -733,8 +736,8 @@ output saves both the symmetry basis and the basis used for the source;
 a label such as ``A2+B2`` records contributions from both symmetry types.
 See :ref:`tracking-axis-selection` for this distinction.
 
-If a C4v trial fails, the tracker tries C2v when supported. If neither is
-accepted, successful longitudinal/gradient separation remains in place,
+If a symmetry trial fails, the tracker tries the other supported subgroups
+in the order described below. If no trial is accepted, successful longitudinal/gradient separation remains in place,
 with smooth continuation only inside remaining unresolved blocks. Copper
 surface-impedance boundaries have additional symmetry checks. Any rejected
 change retains the preceding validated fields. The full-field, power, and
@@ -1421,3 +1424,153 @@ Gallery 11: Persistent doublets crossing in a square guide
 .. figure:: ../../examples/features/eigenmode_tracking/example_11_C4v_square_persistent_pair_crossing/gallery/after_crossing_H_modes.png
    :width: 100%
    :alt: Magnetic fields after the crossing.
+
+
+.. _tracking-native-symmetry-groups:
+
+Native Yee-grid symmetry groups
+===============================
+
+Detection follows an operation pipeline rather than separate geometry tests
+for each group. It tests the two axis mirrors, two diagonal mirrors, quarter
+turn, and half turn once per anchor. Every operation must preserve the sampled
+complex permittivity, permeability, PEC/PMC masks, and installed SIBC rows.
+The intersection of the accepted operations across all anchors determines the
+available groups. Modal-span closure, Maxwell residuals, and power checks
+then independently certify each proposed field decomposition.
+
+Quarter turns and diagonal mirrors require a square port window with equal
+transverse spacing. Half turns and axis mirrors also work on rectangular
+meshes. All operations fix the propagation axis and act about the aperture
+centre. These are the subgroups of the transverse square-grid point group,
+not the full three-dimensional cubic lattice group. Translations and
+reflections through an off-centre plane are outside this detector.
+
+Candidate priority is C4v, axis C2v, diagonal C2v, C4, C2, vertical Cs,
+horizontal Cs, diagonal Cs, then antidiagonal Cs. This orders groups by size
+with a deterministic preference between equal-size groups, retaining axis
+C2v as the first fallback from C4v. ``none`` denotes the identity-only case.
+Diagnostics retain accepted primitive operations and rejection reasons.
+Repeated copies of the same symmetry type need additional physical information
+to select unique individual modes. C4v E pairs retain the existing automatic
+polarization controls; the new groups do not expand that API.
+
+In the following illustrations, each colour is the orbit of one generic point:
+its copies show the operations of the group. Dashed purple lines are mirrors.
+These are symmetry diagrams, not material layouts or field solutions. Here u
+is horizontal and v is vertical in the local port plane; the words vertical
+and horizontal describe lines in that view, not fixed global axes.
+
+C4v: square symmetry
+--------------------
+
+.. figure:: ../../images_shared/symmetry_groups/c4v.svg
+   :width: 320px
+   :alt: C4v: square symmetry operation orbit
+
+   C4v: square symmetry; diagnostic identifier ``c4v``.
+
+Quarter turns and all four mirrors. Singlets A1, A2, B1, B2 and the two-dimensional E representation. Requires a square mesh with equal spacing.
+
+C2v: axis mirrors
+-----------------
+
+.. figure:: ../../images_shared/symmetry_groups/c2v.svg
+   :width: 320px
+   :alt: C2v: axis mirrors operation orbit
+
+   C2v: axis mirrors; diagnostic identifier ``c2v``.
+
+Half turn and both axis mirrors. Singlets A1, A2, B1, B2 use the existing axis-mirror convention. Rectangular meshes are supported.
+
+C2v: diagonal mirrors
+---------------------
+
+.. figure:: ../../images_shared/symmetry_groups/c2v_diagonal.svg
+   :width: 320px
+   :alt: C2v: diagonal mirrors operation orbit
+
+   C2v: diagonal mirrors; diagnostic identifier ``c2v_diagonal``.
+
+Half turn and both diagonal mirrors. A1, A2, B1, B2 correspond to mirror-sign pairs (+,+), (-,-), (-,+), (+,-), ordered diagonal then antidiagonal. Requires a square mesh with equal spacing.
+
+C4: rotations only
+------------------
+
+.. figure:: ../../images_shared/symmetry_groups/c4.svg
+   :width: 320px
+   :alt: C4: rotations only operation orbit
+
+   C4: rotations only; diagnostic identifier ``c4``.
+
+Quarter turns without requiring mirrors. Complex singlets A, B, E+, E- have quarter-turn eigenvalues +1, -1, +i, -i. E+ and E- are conjugate rotation channels, not a C4v E doublet. Requires a square mesh with equal spacing.
+
+C2: half turn
+-------------
+
+.. figure:: ../../images_shared/symmetry_groups/c2.svg
+   :width: 320px
+   :alt: C2: half turn operation orbit
+
+   C2: half turn; diagnostic identifier ``c2``.
+
+A half turn without requiring any mirror. Singlets A and B have rotation eigenvalues +1 and -1. Rectangular meshes are supported.
+
+Cs: vertical mirror
+-------------------
+
+.. figure:: ../../images_shared/symmetry_groups/cs_u.svg
+   :width: 320px
+   :alt: Cs: vertical mirror operation orbit
+
+   Cs: vertical mirror; diagnostic identifier ``cs_u``.
+
+The reflection u → -u fixes the vertical line u=0. A' and A'' denote even and odd complete-vector parity. A vertically offset symmetric CPW can retain this mirror. Rectangular meshes are supported.
+
+Cs: horizontal mirror
+---------------------
+
+.. figure:: ../../images_shared/symmetry_groups/cs_v.svg
+   :width: 320px
+   :alt: Cs: horizontal mirror operation orbit
+
+   Cs: horizontal mirror; diagnostic identifier ``cs_v``.
+
+The reflection v → -v fixes the horizontal line v=0. A' and A'' denote even and odd complete-vector parity. Rectangular meshes are supported.
+
+Cs: diagonal mirror
+-------------------
+
+.. figure:: ../../images_shared/symmetry_groups/cs_diagonal.svg
+   :width: 320px
+   :alt: Cs: diagonal mirror operation orbit
+
+   Cs: diagonal mirror; diagnostic identifier ``cs_diagonal``.
+
+The reflection (u,v) → (v,u) fixes u=v. A' and A'' denote even and odd complete-vector parity. Requires a square mesh with equal spacing.
+
+Cs: antidiagonal mirror
+-----------------------
+
+.. figure:: ../../images_shared/symmetry_groups/cs_antidiagonal.svg
+   :width: 320px
+   :alt: Cs: antidiagonal mirror operation orbit
+
+   Cs: antidiagonal mirror; diagnostic identifier ``cs_antidiagonal``.
+
+The reflection (u,v) → (-v,-u) fixes u=-v. A' and A'' denote even and odd complete-vector parity. Requires a square mesh with equal spacing.
+
+C1: identity only
+-----------------
+
+.. figure:: ../../images_shared/symmetry_groups/none.svg
+   :width: 320px
+   :alt: C1: identity only operation orbit
+
+   C1: identity only; diagnostic identifier ``none``.
+
+No nontrivial native symmetry is detected. Longitudinal/gradient separation and continuation of unresolved subspaces remain available; no parity or rotation label is asserted.
+
+The figures can be regenerated from the repository root with::
+
+   python testing/eigenmode_support/symmetry/illustrate_native_groups.py
