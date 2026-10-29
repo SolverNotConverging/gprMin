@@ -64,6 +64,9 @@ class Solver:
         try:
             self._solve(iterator)
         except BaseException:
+            from gprMax.dft_convergence import restore_monitor_lengths
+
+            restore_monitor_lengths(self.updates.grid)
             try:
                 self.updates.cleanup()
             except Exception:
@@ -74,6 +77,14 @@ class Solver:
 
     def _solve(self, iterator):
         """Run and finalise only successful simulations; solve owns cleanup."""
+        from gprMax.dft_convergence import DFTConvergence, DFTConvergenceSettings
+
+        convergence = DFTConvergence(
+            self.updates,
+            getattr(config.sim_config, "dft_convergence", DFTConvergenceSettings()),
+            getattr(config.sim_config, "general", {}).get("solver", "cpu"),
+        )
+        completed = 0
         self.updates.time_start()
 
         for iteration in iterator:
@@ -132,8 +143,15 @@ class Solver:
             if isinstance(self.updates, CUDAUpdates):
                 self.memused = self.updates.calculate_memory_used(iteration)
 
+            completed = iteration + 1
+            if convergence.should_stop(completed):
+                break
+
+        convergence.finish(completed)
         self.updates.finalise()
         self.solvetime = self.updates.calculate_solve_time()
+        if isinstance(self.updates, CUDAUpdates) and completed < convergence.maximum:
+            self.memused = self.updates.calculate_memory_used(convergence.maximum - 1)
 
 
 def create_solver(model: Model) -> Solver:

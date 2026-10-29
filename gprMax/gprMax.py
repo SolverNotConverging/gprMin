@@ -49,6 +49,11 @@ args_defaults = {
     "log_level": 20,  # Level DEBUG = 10; INFO = 20; BASIC = 25
     "log_file": False,
     "log_all_ranks": False,
+    "dft_convergence": True,
+    "dft_rtol": 1e-3,
+    "dft_check_interval": 0,
+    "dft_stable_checks": 3,
+    "dft_min_time": 0.0,
 }
 
 # Argument help messages (used for CLI argparse)
@@ -167,6 +172,11 @@ def run(
     log_file=args_defaults["log_file"],
     log_all_ranks=args_defaults["log_all_ranks"],
     allow_underresolved=args_defaults["allow_underresolved"],
+    dft_convergence=args_defaults["dft_convergence"],
+    dft_rtol=args_defaults["dft_rtol"],
+    dft_check_interval=args_defaults["dft_check_interval"],
+    dft_stable_checks=args_defaults["dft_stable_checks"],
+    dft_min_time=args_defaults["dft_min_time"],
 ):
     """Entry point for application programming interface (API).
 
@@ -246,6 +256,15 @@ def run(
             insufficient spatial resolution. This research override does
             not change the mesh, timestep, material stability checks or
             frequency-domain output-validity limits.
+        dft_convergence: stop eligible pulsed runs when all available DFT
+            bins converge; default True. The time window is an upper bound.
+        dft_rtol: relative complex DFT change tolerance; default 0.001.
+        dft_check_interval: timesteps between checkpoints; zero selects
+            an automatic interval based on the record and DFT frequencies.
+        dft_stable_checks: stable comparison intervals required; default
+            three, minimum two.
+        dft_min_time: minimum simulated time before convergence checks,
+            in seconds. Source and propagation guards also apply.
     """
 
     args = argparse.Namespace(
@@ -274,6 +293,11 @@ def run(
             "log_file": log_file,
             "log_all_ranks": log_all_ranks,
             "allow_underresolved": allow_underresolved,
+            "dft_convergence": dft_convergence,
+            "dft_rtol": dft_rtol,
+            "dft_check_interval": dft_check_interval,
+            "dft_stable_checks": dft_stable_checks,
+            "dft_min_time": dft_min_time,
         }
     )
 
@@ -288,6 +312,16 @@ def cli():
         prog="gprMax", formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("inputfile", type=_existing_input_file, help=help_msg["inputfile"])
+    parser.add_argument("--no-dft-convergence", dest="dft_convergence", action="store_false",
+                        help="Always run the complete configured time window.")
+    parser.add_argument("--dft-rtol", type=float, default=args_defaults["dft_rtol"],
+                        help="Relative complex DFT convergence tolerance for every bin.")
+    parser.add_argument("--dft-check-interval", type=int, default=args_defaults["dft_check_interval"],
+                        help="Timesteps between DFT checks; zero selects automatically.")
+    parser.add_argument("--dft-stable-checks", type=int, default=args_defaults["dft_stable_checks"],
+                        help="Number of consecutive stable DFT comparisons required (minimum two).")
+    parser.add_argument("--dft-min-time", type=float, default=args_defaults["dft_min_time"],
+                        help="Minimum simulated time in seconds before checking convergence.")
     parser.add_argument("-outputfile", "-o", help=help_msg["outputfile"])
     parser.add_argument("-n", default=args_defaults["n"], type=int, help=help_msg["n"])
     parser.add_argument("-i", type=int, help=help_msg["i"])

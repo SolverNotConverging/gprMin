@@ -263,6 +263,32 @@ def evaluate_equivalent_current_far_zone(
     """Return Cartesian ``r exp(+jkr) E`` using the engineering convention."""
 
     currents = collocate_love_currents(surface_data)
+    return evaluate_love_current_phasors(
+        currents,
+        frequencies,
+        directions,
+        origin=origin,
+        wave_speed=wave_speed,
+        impedance=impedance,
+        nthreads=nthreads,
+    )
+
+
+def evaluate_love_current_phasors(
+    currents,
+    frequencies,
+    directions,
+    *,
+    origin,
+    wave_speed,
+    impedance,
+    nthreads=1,
+):
+    """Evaluate already collocated Love currents with the shared OpenMP kernel.
+
+    The kernel includes the 3-D factor 1/(4*pi). A 2-D caller supplies line
+    weights and replaces this factor with the cylindrical Green prefactor.
+    """
     frequency_values = np.asarray(frequencies, dtype=currents.positions.dtype)
     direction_values = np.asarray(directions, dtype=currents.positions.dtype)
     origin_values = np.asarray(origin, dtype=currents.positions.dtype)

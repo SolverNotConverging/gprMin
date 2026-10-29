@@ -83,6 +83,7 @@ from .user_objects.cmds_output import (
     NTFFLayeredTimeFarFieldArray,
     NTFFLayeredTimeTransform,
     NTFFSurface,
+    NTFFContour,
     NTFFTimeFarField,
     NTFFTimeFarFieldArray,
     Radiometry,
@@ -1033,6 +1034,36 @@ def process_multicmds(multicmds):
                 )
 
             scene_objects.append(snapshot)
+
+    cmdname = "#ntff_contour"
+    if multicmds[cmdname] is not None:
+        for cmdinstance in multicmds[cmdname]:
+            tokens = cmdinstance.split()
+            formulation = "equivalent_current"
+            if tokens and tokens[-1].lower() in ("ksir", "ramahi", "equivalent_current"):
+                formulation = tokens.pop().lower()
+            window = "rectangular"
+            if tokens and tokens[-1].lower() in ("rectangular", "hann"):
+                window = tokens.pop().lower()
+            if len(tokens) < 11:
+                raise ValueError(f"{cmdname} requires six coordinates, ID, angle start/stop/step, and frequencies")
+            start, stop, step = (float(value) for value in tokens[7:10])
+            if not np.all(np.isfinite((start, stop, step))) or step <= 0 or stop < start:
+                raise ValueError(f"{cmdname} requires finite start <= stop and a positive angular step")
+            count = (stop - start) / step
+            if not np.isclose(count, round(count)):
+                raise ValueError(f"{cmdname} angular range must be an integer number of steps")
+            scene_objects.append(
+                NTFFContour(
+                    p1=tuple(float(value) for value in tokens[:3]),
+                    p2=tuple(float(value) for value in tokens[3:6]),
+                    id=tokens[6],
+                    angles=start + step * np.arange(round(count) + 1),
+                    frequencies=tuple(float(value) for value in tokens[10:]),
+                    window=window,
+                    formulation=formulation,
+                )
+            )
 
     cmdname = "#ntff_surface"
     if multicmds[cmdname] is not None:

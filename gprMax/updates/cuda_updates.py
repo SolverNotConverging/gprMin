@@ -36,6 +36,7 @@ from gprMax.cuda_opencl import (
     knl_tfsf_injection,
     knl_transmission_line,
     knl_virtual_waveguide,
+    knl_virtual_waveguide_2d,
 )
 from gprMax.eigenmode_device import (
     eigenmode_source_envelopes,
@@ -45,6 +46,7 @@ from gprMax.eigenmode_device import (
     reanchor_device_eigenmode_monitor,
 )
 from gprMax.grid.cuda_grid import CUDAGrid
+from gprMax.mode2d import mode2d_geometry
 from gprMax.network_ports import dtoh_rational_network_outputs, htod_rational_network_arrays
 from gprMax.ntff.device import CUDACombinedKSIRCollector
 from gprMax.receivers import dtoh_rx_array, htod_rx_arrays, requested_current_outputs
@@ -543,6 +545,7 @@ class CUDAUpdates(Updates[CUDAGrid]):
         """Compile aperture coupling kernels for auxiliary device grids."""
 
         self.virtual_tpb = (128, 1, 1)
+        reduced = mode2d_geometry(config.get_model_config().mode)
         for specification, attribute, name in (
             (
                 knl_virtual_waveguide.couple_magnetic,
@@ -565,6 +568,8 @@ class CUDAUpdates(Updates[CUDAGrid]):
                 "clear_virtual_waveguide_rear_electric",
             ),
         ):
+            if reduced:
+                specification = knl_virtual_waveguide_2d.specification(specification, reduced)
             source = self._build_knl(specification, self.subs_name_args, self.subs_func)
             module = self.source_module(source, options=config.sim_config.devices["nvcc_opts"])
             setattr(self, attribute, module.get_function(name))

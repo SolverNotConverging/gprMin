@@ -162,7 +162,7 @@ where :math:`c` is the speed of light. In gprMax the equality is used to determi
 #time_window:
 -------------
 
-Allows you to specify the total required simulated time. The syntax of the command is:
+Specifies the maximum simulated time. Eligible pulsed runs stop earlier when all available DFT bins converge; runs without DFT bins use the full window. See :doc:`dft_convergence` for controls and supported cases. Use ``--no-dft-convergence`` to require a fixed-duration record. The syntax of the command is:
 
 .. code-block:: none
 
@@ -2404,7 +2404,7 @@ least two cells wide in each transverse direction. The minimum guide length
 is ``i3 + i4 + 3`` cells. In 2D, the two-cell width requirement applies only
 to the physical transverse axis; the full invariant storage dimension is
 included automatically. Main-grid virtual waveguides support all 2D TE/TM
-orientations on the CPU, including passive constant/dispersive SIBC and
+orientations on CPU and CUDA. CPU additionally supports passive constant/dispersive SIBC and
 ``resistance inf`` PMC walls. The 3D implementation supports
 non-dispersive guide cross-sections with the CPU, CUDA, OpenCL, and Metal
 solvers. Through the Python API, a virtual waveguide may instead be attached
@@ -2942,7 +2942,8 @@ The following conventions apply to every NTFF command:
   stencil. A closed surface must enclose the radiating source or the complete
   TFSF box and scatterer. An open Huygens surface instead permits an impressed
   source outside only through one of its omitted faces;
-* the implementation requires a three-dimensional model and does not support
+* these surface-based commands require a three-dimensional model; use
+  ``#ntff_contour`` for :ref:`2-D TE/TM contours <ntff-2d>`. They do not support
   geometry-fixed reuse. NTFF commands are main-grid objects, but their closed
   surface may contain complete subgrids. A surface that overlaps a subgrid
   must strictly enclose its HSG outer coupling surface; it cannot touch or cut

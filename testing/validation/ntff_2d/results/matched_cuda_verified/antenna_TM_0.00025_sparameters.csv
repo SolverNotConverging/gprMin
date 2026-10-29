@@ -1,0 +1,2 @@
+frequency_hz,source_port,source_mode,destination_port,destination_mode,S_real,S_imag,S_magnitude,S_magnitude_db,S_phase_deg,coefficient_magnitude_squared,power_wave_valid,coefficient_valid
+22000000000.0,1,1,1,1,0.19510772575024535,-0.026033904072138486,0.19683695996603448,-14.11786702030754,-7.600281409964262,0.03874478880867026,1,1

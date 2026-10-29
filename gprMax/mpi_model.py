@@ -255,6 +255,7 @@ class MPIModel(Model):
                 or self.G.port_monitors
                 or self.G.eigenmodeports
                 or self.G.ntff_output_writers
+                or self.G.ntff_monitors
                 or self.G.sar_monitors
             ):
                 self.G.size = self.G.global_size

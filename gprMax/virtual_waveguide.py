@@ -96,9 +96,9 @@ class VirtualWaveguide:
 
     def _validate(self):
         if self.reduced:
-            if self.mpi or config.sim_config.general["solver"] != "cpu":
+            if self.mpi or config.sim_config.general["solver"] not in ("cpu", "cuda"):
                 raise ValueError(
-                    "2D virtual waveguides currently require the non-distributed CPU solver."
+                    "2D virtual waveguides require the non-distributed CPU or CUDA solver."
                 )
             if self.port.invariant_axis != self.reduced.invariant_axis:
                 raise ValueError("Virtual-waveguide port must use the model's invariant axis.")
@@ -482,6 +482,8 @@ class VirtualWaveguide:
         the component-specific bounds remain in the device kernel.
         """
 
+        if getattr(self, "reduced", None):
+            return (1 if self.direction_sign > 0 else 2) * (self.nu + 1) * (self.nv + 1)
         domain_size = getattr(self.main_grid, "global_size", self.main_grid.size)
         normal_cells = int(domain_size[self.normal_axis])
         if self.direction_sign < 0:

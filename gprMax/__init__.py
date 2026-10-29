@@ -127,6 +127,7 @@ from .user_objects.cmds_output import (
     KSIRTimeRxSpherical,
     NetworkPort,
     NTFFAntennaPorts,
+    NTFFContour,
     NTFFFarField,
     NTFFFarFieldArray,
     NTFFFrequencyTransform,

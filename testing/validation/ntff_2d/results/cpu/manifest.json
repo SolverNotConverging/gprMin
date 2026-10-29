@@ -1,0 +1,27 @@
+{
+  "revision": "e68d228d7587b3021ace1454a6e83d2fd3260323",
+  "python": "3.13.15",
+  "backend": "cpu",
+  "precision": "double",
+  "spacings": [
+    0.004,
+    0.002
+  ],
+  "axes": "xyz",
+  "time_window": 5e-09,
+  "frequencies": [
+    800000000.0,
+    1000000000.0,
+    1200000000.0
+  ],
+  "status": "failed",
+  "runs": [],
+  "source_sha256": {
+    "gprMax/ntff/contour.py": "5163ab74dd84a5757c98547f49059bc07683e5d55ef0c76e158338a931a08d2a",
+    "gprMax/ntff/device.py": "e75cc449b477dde3c52d696c36f08039a89988158d0a52c6f9a5645843c9350b",
+    "gprMax/ntff/equivalent_currents.py": "743725abc675dccebadc76ceb4f188f2d800723a838f31138bf603c6009d35b2",
+    "gprMax/user_objects/cmds_output.py": "8950d1bc9204330a033eaaee7c2508942a466af47b0d92e3870664692dd9b3e6",
+    "testing/validation/ntff_2d/validate_contour.py": "150237b635eac891ea1defe703b0d5c9c461fa4963fe1e6dc5c7d6070be0e7fe"
+  },
+  "error": "NTFFContour sampling stencil enters PML"
+}

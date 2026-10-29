@@ -258,6 +258,10 @@ def write_hdf5_outputfile(outputfile: Path, title: str, model: Model):
         f.attrs["gprMax"] = __version__
         f.attrs["Title"] = title
         f.attrs["Iterations"] = model.iterations
+        if hasattr(model.G, "dft_convergence_result"):
+            convergence = f.create_group("dft_convergence")
+            for key, value in model.G.dft_convergence_result.items():
+                convergence.attrs[key] = value
         f.attrs["srcsteps"] = model.srcsteps
         f.attrs["rxsteps"] = model.rxsteps
         write_hd5_data(f, model.G)

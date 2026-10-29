@@ -1,0 +1,317 @@
+{
+  "analytical_status": "passed",
+  "fdtd_runs": 24,
+  "errors": {
+    "0p004": {
+      "ksir": 0.0011988972549618606,
+      "equivalent_current": 0.0012095196456861986
+    },
+    "0p002": {
+      "ksir": 0.0002888785288800515,
+      "equivalent_current": 0.0002990224704949983
+    }
+  },
+  "accelerators": {
+    "single": [
+      {
+        "backend": "cuda",
+        "mode": "2D TEx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.560488736929873e-06
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.642448499545607e-06
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 5.003697537808682e-07
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 3.7563380691918467e-07
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.560488736929873e-06
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.642448499545607e-06
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 5.003697537808682e-07
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 3.7563380691918467e-07
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.5532827606038967e-06
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.2666965021562508e-06
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 6.041163048305713e-07
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 4.3814816995555996e-07
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 5.003697537808682e-07
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.560488736929873e-06
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.642448499545607e-06
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 5.003697537808682e-07
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 3.7563380691918467e-07
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 3.7563380691918467e-07
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.5532827606038967e-06
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.2666965021562508e-06
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 6.041163048305713e-07
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 4.3814816995555996e-07
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.560488736929873e-06
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 1.642448499545607e-06
+      }
+    ],
+    "double": [
+      {
+        "backend": "cuda",
+        "mode": "2D TEx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 3.969143463398453e-15
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.7391625880270455e-15
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 8.630049927923798e-16
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 7.970330076821746e-16
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 3.969143463398453e-15
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMx",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.7391625880270455e-15
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 8.630049927923798e-16
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 7.970330076821746e-16
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 3.513643610482074e-15
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.2200240857566527e-15
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 7.126807954858887e-16
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 5.932937043695814e-16
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 8.630049927923798e-16
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 3.969143463398453e-15
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.7391625880270455e-15
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TEz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 8.630049927923798e-16
+      },
+      {
+        "backend": "opencl",
+        "mode": "2D TMz",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 7.970330076821746e-16
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMx",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 7.970330076821746e-16
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 3.513643610482074e-15
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMy",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.2200240857566527e-15
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 7.126807954858887e-16
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMy",
+        "formulation": "equivalent_current",
+        "maximum_peak_relative_error": 5.932937043695814e-16
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TEz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 3.969143463398453e-15
+      },
+      {
+        "backend": "cuda",
+        "mode": "2D TMz",
+        "formulation": "ksir",
+        "maximum_peak_relative_error": 2.7391625880270455e-15
+      }
+    ]
+  },
+  "regression": {
+    "passed": 163,
+    "skipped": 3,
+    "reason": "existing CUDA convergence tests: MSVC absent from that shell"
+  },
+  "final_contour_and_mpi_checks": {
+    "passed": 43
+  },
+  "metal": "shared collector implemented; hardware tests skipped on Windows"
+}

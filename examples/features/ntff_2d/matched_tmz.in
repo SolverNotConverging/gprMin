@@ -1,0 +1,18 @@
+#title: Matched-port TMz parallel-plate antenna with both 2D NTFF methods
+#domain_mode: TM
+#domain: 0.08 0.08 inf
+#dx_dy_dz: 0.0005 0.0005 0.0005
+#time_step_stability_factor: 0.99
+#time_window: 2e-9
+#pml_cells: 12 12 0 12 12 0
+#num_threads: 1
+#box: 0.024 0.035 0 0.046 0.036 inf pec n
+#box: 0.024 0.044 0 0.046 0.045 inf pec n
+#box: 0.024 0.035 0 0.025 0.045 inf pec n
+#waveform: ricker 1 22e9 pulse
+#eigenmode_band: band 22e9 22e9 1
+#eigenmode_port: 1 0.028 0.036 0 0.028 0.044 inf + 1 22e9 n
+#virtual_waveguide: 1 48 12 6
+#eigenmode_excitation: 1 1 pulse n
+#ntff_contour: 0.012 0.012 inf 0.068 0.068 inf ramahi 0 358 2 22e9 rectangular ramahi
+#ntff_contour: 0.012 0.012 inf 0.068 0.068 inf love 0 358 2 22e9 rectangular equivalent_current

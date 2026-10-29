@@ -105,7 +105,10 @@ class _DeviceKSIRCollector:
             collector_dtype = getattr(self, "real_dtype", None)
             if collector_dtype is not None and monitor.real_dtype != collector_dtype:
                 raise ValueError("KSIR monitor dtype does not match field dtype")
-            for component, surface in monitor.surfaces.items():
+            surfaces = getattr(monitor, "sampling_surfaces", None)
+            if surfaces is None:
+                surfaces = monitor.surfaces
+            for component, surface in surfaces.items():
                 npatches = int(surface.npatches)
                 nfrequencies = int(monitor.frequencies.size)
                 total = npatches * nfrequencies

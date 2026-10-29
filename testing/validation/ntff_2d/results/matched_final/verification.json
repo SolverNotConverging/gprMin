@@ -1,0 +1,17 @@
+{
+  "matrix_cases": 48,
+  "hdf5_files": 96,
+  "max_uniform_reflection": 0.001572128034198746,
+  "max_uniform_accepted_power_relative_error": 0.002105814130063388,
+  "max_antenna_energy_error": 0.013582601151308049,
+  "max_antenna_incident_power_error": 0.00034540579030939433,
+  "cuda_cpu_peak_relative_error": {
+    "single": 7.162202926625254e-07,
+    "double": 2.208217118699501e-15
+  },
+  "tests": {
+    "analytical_and_modal_units": 48,
+    "cpu_virtual_guide_regression": 132,
+    "three_dimensional_cuda_regression": 11
+  }
+}
