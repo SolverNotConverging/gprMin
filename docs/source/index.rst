@@ -84,6 +84,7 @@ gprMax User Guide
     :caption: Developers
 
     contributing
+    conformal_development
     releasing
     testing
     reframe_test_suite

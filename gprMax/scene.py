@@ -224,6 +224,9 @@ class Scene:
         self.build_model_objects(self.subgrid_objects, model)
 
     def process_geometry_objects(self, geometry_objects: List[GeometryUserObject], grid: FDTDGrid):
+        from gprMax.conformal.scene_geometry import ContinuousGeometry
+
+        grid.continuous_geometry = ContinuousGeometry.capture(geometry_objects, grid)
         # Check for fractal boxes and modifications and pre-process them first
         # TODO: Can this be removed in favour of sorting geometry objects?
         objects_to_be_built: List[GeometryUserObject] = []
@@ -290,11 +293,14 @@ class Scene:
                 else:
                     continuous_p1 = tuple(np.asarray(grid.dl) * p1)
                     continuous_p2 = tuple(np.asarray(grid.dl) * p2)
-                Plate(
+                plate = Plate(
                     p1=continuous_p1,
                     p2=continuous_p2,
                     material_id="pec",
-                ).build(grid)
+                )
+                if grid.continuous_geometry is not None:
+                    grid.continuous_geometry = grid.continuous_geometry.append([plate], grid)
+                plate.build(grid)
 
             grid.pmls["internal_registry"][spec.ID]["generated_pec_faces"] = len(faces)
             logger.info(

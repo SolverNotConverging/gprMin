@@ -131,6 +131,9 @@ class FDTDGrid:
         # material IDs and deliberately remains on the host.
         self.geometry_tag_registry = None
         self.geometry_tag_map = None
+        # Physical input geometry is retained before primitive builders round
+        # coordinates. Conformal field and port compilers share this source.
+        self.continuous_geometry = None
 
         # Update Coefficient Arrays
         self.updatecoeffsE: npt.NDArray[np.float32]
