@@ -176,6 +176,9 @@ def run_2d(path, *, precision="double", geometry_only=False, **kwargs):
 
     with patch.object(FDTDGrid, "build", capture):
         gprMax.run(
+            # These comparisons require identical time records, including
+            # the late-time tail, rather than independently converged DFTs.
+            dft_convergence=False,
             scenes=[scene_2d(**kwargs)],
             outputfile=path,
             cpu_precision=precision,
